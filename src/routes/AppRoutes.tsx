@@ -13,7 +13,9 @@ import FeesPage from '../pages/FeesPage'
 import AdminPage from '../pages/AdminPage'
 import ChatPage from '../pages/ChatPage'
 import QuizzesPage from '../pages/QuizzesPage'
-
+import AttendancePage from '../pages/AttendancePage'
+import EnterMarksPage from '../pages/EnterMarksPage'
+import RegisterPage   from '../pages/RegisterPage'
 
 function TeacherDashboardPlaceholder() {
   return <DashboardPage />
@@ -48,6 +50,8 @@ export function AppRouter() {
           <Route path="fees" element={<FeesPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="quizzes" element={<QuizzesPage />} />
+          <Route path="attendance" element={<AttendancePage />} />
+          <Route path="enter-marks"  element={<EnterMarksPage />} />
           <Route
             path="admin"
             element={
@@ -81,7 +85,7 @@ export function AppRouter() {
             }
           />
         </Route>
-
+        <Route path="/register" element={<RegisterPage />} />
         <Route path="/login" element={<LoginPage />} />
       </Routes>
     </BrowserRouter>

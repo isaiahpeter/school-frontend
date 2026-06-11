@@ -13,6 +13,7 @@ const ALL_NAV = [
   { label: 'Quizzes',   to: '/quizzes',    icon: '📝', roles: ['admin','teacher','student'] },
   { label: 'Admin',     to: '/admin',      icon: '⚙️',  roles: ['admin'] },
   { label: 'Settings',  to: '/settings',   icon: '🔧', roles: ['admin','teacher','student','parent'] },
+  { label: 'Enter Marks', to: '/enter-marks', icon: '✏️', roles: ['admin','teacher'] },
 ]
 
 export default function AppShell() {
