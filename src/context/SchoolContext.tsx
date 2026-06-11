@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { api } from '../lib/apiClient';   // ← named import, same as LoginPage
+import { createContext, useContext, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';                // type-only import
+import { api } from '../lib/apiClient';                // named import – we'll use it
 
 interface School {
   id: string;
@@ -7,15 +8,15 @@ interface School {
   address?: string;
   phone?: string;
   email?: string;
-  settings?: Record<string, any>;   // ← added
+  settings?: Record<string, any>;
 }
 
 interface SchoolContextValue {
   school: School | null;
   schools: School[];
   loading: boolean;
-  settings: Record<string, any> | null;   // ← added
-  refresh: () => Promise<void>;           // ← added
+  settings: Record<string, any> | null;
+  refresh: () => Promise<void>;
 }
 
 const SchoolContext = createContext<SchoolContextValue>({
@@ -33,10 +34,9 @@ export const SchoolProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchSchool = async () => {
     try {
-      // Use the multi‑tenant endpoint that returns the current user's school
-      const { data } = await apiClient.get('/api/school/me');
+      const { data } = await api.get('/api/schools');   // using 'api' here
       setSchool(data);
-      setSchools([data]);   // keep compatibility with `schools` list
+      setSchools([data]);
     } catch (err) {
       console.error('Failed to fetch school', err);
     } finally {
