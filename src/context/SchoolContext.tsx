@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { api } from '../lib/apiClient'
 
 type School = { id: string; name: string; address?: string; phone?: string; email?: string }

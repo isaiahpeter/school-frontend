@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { useSchool } from '../context/SchoolContext'
 import { api } from '../lib/apiClient'
 
