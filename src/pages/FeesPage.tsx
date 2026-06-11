@@ -320,9 +320,18 @@ export default function FeesPage() {
                       </tr>
                     ))}
                   </tbody>
-                  <td className="px-4 py-3 text-right font-bold font-mono text-gray-900">
-  {fmt(structure.total)}
-</td>
+                  
+                  {/* ⚡ The Corrected Footer */}
+                  <tfoot className="bg-gray-50 border-t font-semibold">
+                    <tr>
+                      <td colSpan={2} className="px-4 py-3 text-right text-gray-500">
+                        Grand Total:
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold font-mono text-gray-900">
+                        {fmt(structure.total)}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </>

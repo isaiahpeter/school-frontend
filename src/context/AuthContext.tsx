@@ -1,5 +1,6 @@
 import { createContext, useEffect, useMemo, useState } from 'react'
-import { api, setAuthToken } from '../lib/apiClient'
+//port { api, setAuthToken } from '../lib/apiClient'
+import { api } from '../lib/apiClient'
 import { clearToken, getToken, setToken } from '../lib/storage'
 import { decodeJwt } from '../utils/jwt'
 import type { LoginResponse, User, UUID } from '../types/api'
@@ -33,7 +34,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = getToken()
     if (stored) {
       setTokenState(stored)
-      setAuthToken(stored)
       const decoded = decodeJwt(stored) as any
       setUser(decoded?.user ?? decoded)
       setStatus('authenticated')
