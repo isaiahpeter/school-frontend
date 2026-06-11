@@ -10,14 +10,11 @@ import CapturePage from '../pages/CapturePage'
 import SettingsPage from '../pages/SettingsPage'
 import ResultsPage from '../pages/ResultsPage'
 import FeesPage from '../pages/FeesPage'
+import AdminPage from '../pages/AdminPage'
+import ChatPage from '../pages/ChatPage'
+import QuizzesPage from '../pages/QuizzesPage'
 
-// add inside nested routes
-<Route path="fees" element={<FeesPage />} />
 
-
-function AdminDashboardPlaceholder() {
-  return <DashboardPage />
-}
 function TeacherDashboardPlaceholder() {
   return <DashboardPage />
 }
@@ -40,20 +37,22 @@ export function AppRouter() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<StudentDashboardPlaceholder />} />
+          <Route index element={<DashboardPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="students" element={<StudentDashboardPlaceholder />} />
+          <Route path="students" element={<StudentsPage />} />
           <Route path="students/:id" element={<StudentDetailPage />} />
           <Route path="visitors" element={<VisitorsPage />} />
           <Route path="capture" element={<CapturePage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="results" element={<ResultsPage />} />
           <Route path="fees" element={<FeesPage />} />
+          <Route path="chat" element={<ChatPage />} />
+          <Route path="quizzes" element={<QuizzesPage />} />
           <Route
             path="admin"
             element={
               <ProtectedRoute roles={['admin']}>
-                <AdminDashboardPlaceholder />
+                <AdminPage />
               </ProtectedRoute>
             }
           />
@@ -88,6 +87,3 @@ export function AppRouter() {
     </BrowserRouter>
   )
 }
-
-
-

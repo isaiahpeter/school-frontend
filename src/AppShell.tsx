@@ -22,6 +22,9 @@ export default function AppShell() {
     { label: 'Settings', to: '/settings' },
     { label: 'Results', to: '/results' },
     { label: 'Fees', to: '/fees' },
+    { label: 'Chat', to: '/chat' },
+    { label: 'Quizzes', to: '/quizzes' },
+    { label: 'Admin', to: '/admin' },
   ]
 
   return (

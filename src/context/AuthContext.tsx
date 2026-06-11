@@ -1,8 +1,6 @@
-import { createContext, useEffect, useMemo, useState } from 'react'
-//port { api, setAuthToken } from '../lib/apiClient'
+import React, { createContext, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/apiClient'
 import { clearToken, getToken, setToken } from '../lib/storage'
-import { decodeJwt } from '../utils/jwt'
 import type { LoginResponse, User, UUID } from '../types/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -19,7 +17,7 @@ type AuthContextValue = {
   logout: () => void
 }
 
-// ─── Context — must be declared before AuthProvider uses it ───────────────────
+// ─── Context ──────────────────────────────────────────────────────────────────
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
@@ -30,12 +28,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
 
+  // Rehydrate on mount — use stored user object since JWT has no role field
   useEffect(() => {
     const stored = getToken()
     if (stored) {
       setTokenState(stored)
-      const decoded = decodeJwt(stored) as any
-      setUser(decoded?.user ?? decoded)
+      // Attach token to axios defaults directly
+      api.defaults.headers.common['Authorization'] = `Bearer ${stored}`
+      const savedUser = localStorage.getItem('school_user')
+      if (savedUser) {
+        try { setUser(JSON.parse(savedUser)) } catch {}
+      }
       setStatus('authenticated')
     } else {
       setStatus('unauthenticated')
@@ -44,16 +47,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const schoolIdFromToken = useMemo<UUID | null>(() => {
     if (!token) return null
-    const decoded = decodeJwt(token) as any
-    return decoded?.school_id ?? decoded?.schoolId ?? null
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      return payload?.school_id ?? payload?.schoolId ?? null
+    } catch { return null }
   }, [token])
 
   function persist(data: LoginResponse) {
     setToken(data.token)
     setTokenState(data.token)
-    setAuthToken(data.token)
+    api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
     setUser(data.user)
     setStatus('authenticated')
+    localStorage.setItem('school_user', JSON.stringify(data.user))
   }
 
   async function login(email: string, password: string): Promise<User> {
@@ -70,10 +76,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   function logout() {
     clearToken()
-    setAuthToken(null)
+    delete api.defaults.headers.common['Authorization']
     setTokenState(null)
     setUser(null)
     setStatus('unauthenticated')
+    localStorage.removeItem('school_user')
   }
 
   return (
