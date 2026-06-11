@@ -453,7 +453,7 @@ export default function FeesPage() {
                   payments.map(p => (
                     <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3 font-medium text-gray-900">
-                        {p.students?.users?.full_name ?? studentName(p.student_id ?? '')}
+                        {p.students?.users?.full_name ?? studentName(p.students.id?? '')}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.reference}</td>
                       <td className="px-4 py-3 font-semibold text-gray-900">{fmt(p.amount)}</td>
