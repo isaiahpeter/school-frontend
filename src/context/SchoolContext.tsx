@@ -45,8 +45,13 @@ export const SchoolProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    fetchSchool();
-  }, []);
+  const token = localStorage.getItem('school_jwt');
+  if (!token) {
+    setLoading(false);
+    return;
+  }
+  fetchSchool();
+}, []);
 
   const refresh = fetchSchool;
 

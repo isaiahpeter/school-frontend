@@ -39,20 +39,20 @@ export function setAuthToken(token: string | null) {
   }
 }
 
-// Response interceptor – clear token and redirect to login on 401s.
 api.interceptors.response.use(
-(response) => response,
+  (response) => response,
   (error: AxiosError) => {
     if (error?.response?.status === 401) {
-      clearToken()
-      setAuthToken(null)
-      window.location.href = '/login'
+      // Only redirect if we’re NOT already on the login page
+      if (window.location.pathname !== '/login') {
+        clearToken();
+        setAuthToken(null);
+        window.location.href = '/login';
+      }
     }
-    return Promise.reject(error)
+    return Promise.reject(error);
   },
-)
-
-
+);
 
 
 
