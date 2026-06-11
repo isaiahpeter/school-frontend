@@ -30,7 +30,7 @@ export default function LoginPage() {
     try {
       const user = await login(email, password)
       toast.success(`Welcome back, ${user.full_name ?? 'there'}!`)
-      nav(ROLE_ROUTES[user.role] ?? '/dashboard', { replace: true })
+      nav(ROLE_ROUTES[user.role ?? ''] ?? '/dashboard', { replace: true })
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err?.message ?? 'Login failed')
     } finally {
