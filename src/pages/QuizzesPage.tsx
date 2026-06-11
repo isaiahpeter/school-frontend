@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 
@@ -292,7 +292,7 @@ export default function QuizzesPage() {
         {/* Questions */}
         {activeQuiz.quiz_questions.map((q, qi) => {
           const chosen = answers[q.id]
-          const correct = q.quiz_question_options.find(o => o.is_correct)
+          // const correct = q.quiz_question_options.find(o => o.is_correct)
           return (
             <div key={q.id} className="bg-white border rounded-xl px-5 py-4 space-y-3">
               <div className="flex items-start justify-between gap-2">
