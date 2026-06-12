@@ -7,11 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon-32x32.png', 'apple-touch-icon.png', 'school-logo.png'],
       manifest: {
-        name: 'School Portal',
-        short_name: 'SchoolApp',
-        description: 'School management portal',
+        name: 'Cedarsprings School Portal',
+        short_name: 'Cedarsprings',
+        description: 'School management portal for Cedarsprings School',
         theme_color: '#7c3aed',
         background_color: '#ffffff',
         display: 'standalone',
@@ -19,12 +19,9 @@ export default defineConfig({
         scope: '/',
         start_url: '/',
         icons: [
-          { src: '/launcher_icon-72x72.png', sizes: '72x72', type: 'image/png' },
-          { src: '/launcher_icon-96x96.png', sizes: '96x96', type: 'image/png' },
-          { src: '/launcher_icon-144x144.png', sizes: '144x144', type: 'image/png' },
-          { src: '/launcher_icon-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/launcher_icon-512x512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/launcher_icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
       },
       workbox: {

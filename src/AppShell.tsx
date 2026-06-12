@@ -53,9 +53,11 @@ export default function AppShell() {
 
           {/* Brand */}
           <div className="flex items-center gap-2 min-w-0">
-            <div className="h-8 w-8 shrink-0 rounded-lg bg-violet-600 flex items-center justify-center text-white font-bold text-sm">
-              {school?.name?.[0] ?? 'S'}
-            </div>
+            <img
+  src="/school-logo.png"
+  alt={school?.name ?? 'School'}
+  className="h-8 w-8 shrink-0 rounded-lg object-contain"
+/>
             <div className="min-w-0">
               <div className="font-semibold text-sm truncate max-w-[120px] sm:max-w-none">
                 {school?.name ?? 'School'}

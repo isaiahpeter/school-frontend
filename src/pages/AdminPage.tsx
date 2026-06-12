@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import  { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 
@@ -113,11 +113,13 @@ export default function AdminPage() {
   const [showSchoolModal,     setShowSchoolModal]     = useState(false)
   const [showTermModal,       setShowTermModal]       = useState(false)
   const [showEnrollModal,     setShowEnrollModal]     = useState(false)
+  const [showSubjectModal,    setShowSubjectModal]    = useState(false)
 
   // Form state
   const [schoolForm,  setSchoolForm]  = useState({ name: '', address: '', phone: '', email: '' })
   const [termForm,    setTermForm]    = useState({ name: '', academic_year: '', school_id: '', start_date: '', end_date: '' })
   const [enrollForm,  setEnrollForm]  = useState({ student_id: '', class_id: '' })
+  const [subjectForm, setSubjectForm] = useState({ name: '', code: '', description: '' })
   const [saving, setSaving] = useState(false)
 
   // Load all data on mount
@@ -179,6 +181,33 @@ export default function AdminPage() {
       setTermForm({ name: '', academic_year: '', school_id: '', start_date: '', end_date: '' })
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Failed to create term')
+    } finally { setSaving(false) }
+  }
+
+  // ── Create subject ──
+  async function createSubject() {
+    if (!subjectForm.name.trim() || !subjectForm.code.trim())
+      return toast.error('Name and code are required')
+    
+    // Get school_id from first school
+    const school_id = schools[0]?.id
+    if (!school_id) return toast.error('No school found')
+    
+    setSaving(true)
+    try {
+      await api.post('/api/subjects', {
+        name: subjectForm.name.trim().toUpperCase(),
+        code: subjectForm.code.trim().toUpperCase(),
+        description: subjectForm.description.trim() || undefined,
+        school_id,
+      })
+      toast.success('Subject created')
+      const res = await api.get('/api/subjects')
+      setSubjects(res.data?.value ?? res.data ?? [])
+      setShowSubjectModal(false)
+      setSubjectForm({ name: '', code: '', description: '' })
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? e?.response?.data?.error ?? 'Failed to create subject')
     } finally { setSaving(false) }
   }
 
@@ -421,7 +450,7 @@ export default function AdminPage() {
       {/* ── Subjects ── */}
       {tab === 'subjects' && (
         <>
-          <SectionHeader title="Subjects" />
+          <SectionHeader title="Subjects" action={<AddButton onClick={() => setShowSubjectModal(true)} />} />
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
@@ -446,6 +475,31 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+
+          {showSubjectModal && (
+            <Modal title="Create Subject" onClose={() => setShowSubjectModal(false)}>
+              <Field label="Subject Name *">
+                <input className={input} placeholder="e.g. BASIC TECHNOLOGY"
+                  value={subjectForm.name}
+                  onChange={e => setSubjectForm(f => ({ ...f, name: e.target.value }))} />
+              </Field>
+              <Field label="Subject Code *">
+                <input className={input} placeholder="e.g. BTECH (must be unique)"
+                  value={subjectForm.code}
+                  onChange={e => setSubjectForm(f => ({ ...f, code: e.target.value }))} />
+                <p className="text-xs text-gray-400 mt-1">Code is auto-uppercased and must be unique</p>
+              </Field>
+              <Field label="Description">
+                <input className={input} placeholder="Optional description"
+                  value={subjectForm.description}
+                  onChange={e => setSubjectForm(f => ({ ...f, description: e.target.value }))} />
+              </Field>
+              <button onClick={createSubject} disabled={saving}
+                className="w-full mt-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                {saving ? 'Creating…' : 'Create Subject'}
+              </button>
+            </Modal>
+          )}
         </>
       )}
 

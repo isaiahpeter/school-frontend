@@ -1,75 +1,63 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import type { ReactNode } from 'react';                // type-only import
-import { api } from '../lib/apiClient';                // named import – we'll use it
+import { createContext, useContext, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { api } from '../lib/apiClient'
 
 interface School {
-  id: string;
-  name: string;
-  address?: string;
-  phone?: string;
-  email?: string;
-  settings?: Record<string, any>;
+  id: string
+  name: string
+  address?: string
+  phone?: string
+  email?: string
+  settings?: Record<string, any>
 }
 
 interface SchoolContextValue {
-  school: School | null;
-  schools: School[];
-  loading: boolean;
-  settings: Record<string, any> | null;
-  refresh: () => Promise<void>;
+  school: School | null
+  schools: School[]
+  loading: boolean
+  settings: Record<string, any> | null
+  refresh: () => Promise<void>
 }
 
 const SchoolContext = createContext<SchoolContextValue>({
-  school: null,
-  schools: [],
-  loading: true,
-  settings: null,
-  refresh: async () => {},
-});
+  school: null, schools: [], loading: true, settings: null, refresh: async () => {},
+})
 
 export const SchoolProvider = ({ children }: { children: ReactNode }) => {
-  const [schools, setSchools] = useState<School[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [school, setSchool] = useState<School | null>(null);
+  const [schools, setSchools] = useState<School[]>([])
+  const [school, setSchool]   = useState<School | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const fetchSchool = async () => {
+  const fetchSchools = async () => {
     try {
-      const { data } = await api.get('/api/schools');   // using 'api' here
-      setSchool(data);
-      setSchools([data]);
+      const { data } = await api.get('/api/schools')
+      const list: School[] = data?.value ?? data ?? []
+      setSchools(list)
+      setSchool(list[0] ?? null)
     } catch (err) {
-      console.error('Failed to fetch school', err);
+      console.error('Failed to fetch schools', err)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   useEffect(() => {
-  const token = localStorage.getItem('school_jwt');
-  if (!token) {
-    setLoading(false);
-    return;
-  }
-  fetchSchool();
-}, []);
-
-  const refresh = fetchSchool;
+    const token = localStorage.getItem('school_jwt')
+    if (!token) { setLoading(false); return }
+    fetchSchools()
+  }, [])
 
   return (
-    <SchoolContext.Provider
-      value={{
-        school,
-        schools,
-        loading,
-        settings: school?.settings ?? {},
-        refresh,
-      }}
-    >
+    <SchoolContext.Provider value={{
+      school, schools, loading,
+      settings: school?.settings ?? {},
+      refresh: fetchSchools,
+    }}>
       {children}
     </SchoolContext.Provider>
-  );
-};
+  )
+}
 
 export function useSchool() {
-  return useContext(SchoolContext);
+  return useContext(SchoolContext)
 }
