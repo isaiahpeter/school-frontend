@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
+import { useAuth } from '../hooks/useAuth'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,8 +36,6 @@ interface QuizDetail extends Quiz {
   quiz_questions: Question[]
 }
 
-// ─── Create Quiz Form ─────────────────────────────────────────────────────────
-
 interface QuestionDraft {
   question_text: string
   points: number
@@ -46,39 +45,135 @@ interface QuestionDraft {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function Badge({ label, color }: { label: string; color: string }) {
-  return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>{label}</span>
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>
+      {label}
+    </span>
+  )
+}
+
+// ─── Bulk Upload Modal ────────────────────────────────────────────────────────
+
+function BulkUploadModal({ quiz, onClose, onSuccess }: {
+  quiz: Quiz
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleUpload() {
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      await api.post(`/api/quizzes/${quiz.id}/questions/bulk`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      toast.success('Questions uploaded successfully!')
+      onSuccess()
+      onClose()
+    } catch (e: any) {
+      const msg = e?.response?.data?.error ?? 'Upload failed'
+      setError(msg)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 space-y-4">
+        <h3 className="font-semibold text-lg">Bulk Upload Questions</h3>
+        <p className="text-sm text-gray-600">
+          Upload a <code className="text-xs bg-gray-100 px-1 rounded">.json</code> file containing an array of questions.
+        </p>
+        <p className="text-xs text-gray-500">
+          Target quiz: <strong>{quiz.title}</strong>
+        </p>
+
+        <input
+          type="file"
+          accept=".json"
+          onChange={e => {
+            const files = e.target.files
+            if (files?.[0]) {
+              setFile(files[0])
+              setError(null)
+            }
+          }}
+          className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+        />
+
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={!file || uploading}
+            className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors"
+          >
+            {uploading ? 'Uploading…' : 'Upload'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function QuizzesPage() {
-  const [quizzes, setQuizzes] = useState<Quiz[]>([])
-  const [loading, setLoading] = useState(true)
+  const { user } = useAuth()
+  const role = (user as any)?.role ?? 'student'
+  const canManage = role === 'admin' || role === 'teacher'
+
+  const [quizzes,  setQuizzes]  = useState<Quiz[]>([])
+  const [loading,  setLoading]  = useState(true)
   const [activeQuiz, setActiveQuiz] = useState<QuizDetail | null>(null)
   const [takingQuiz, setTakingQuiz] = useState(false)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [submitted, setSubmitted] = useState(false)
-  const [score, setScore] = useState<{ earned: number; total: number } | null>(null)
-  const [timeLeft, setTimeLeft] = useState<number | null>(null)
+  const [answers,    setAnswers]    = useState<Record<string, string>>({})
+  const [submitted,  setSubmitted]  = useState(false)
+  const [score,      setScore]      = useState<{ earned: number; total: number } | null>(null)
+  const [timeLeft,   setTimeLeft]   = useState<number | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Create quiz state
   const [showCreate, setShowCreate] = useState(false)
-  const [classes, setClasses]   = useState<{ id: string; name: string }[]>([])
-  const [terms,   setTerms]     = useState<{ id: string; name: string; academic_year: string }[]>([])
-  const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([])
+  const [classes,    setClasses]    = useState<{ id: string; name: string }[]>([])
+  const [terms,      setTerms]      = useState<{ id: string; name: string; academic_year: string }[]>([])
+  const [subjects,   setSubjects]   = useState<{ id: string; name: string }[]>([])
   const [createForm, setCreateForm] = useState({
     title: '', description: '', class_id: '', term_id: '', subject_id: '',
     time_limit_minutes: 10, require_payment: false, school_id: '',
   })
-  const [questions, setQuestions] = useState<QuestionDraft[]>([
-    { question_text: '', points: 5, options: [
+  const [questions, setQuestions] = useState<QuestionDraft[]>([{
+    question_text: '', points: 5,
+    options: [
       { option_text: '', is_correct: true },
       { option_text: '', is_correct: false },
       { option_text: '', is_correct: false },
-    ]}
-  ])
+    ],
+  }])
   const [saving, setSaving] = useState(false)
+
+  // Bulk upload state
+  const [bulkQuiz, setBulkQuiz] = useState<Quiz | null>(null)
+
+  // ── Load data ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
     loadQuizzes()
@@ -96,18 +191,35 @@ export default function QuizzesPage() {
     }).catch(() => {})
   }, [])
 
+
   async function loadQuizzes() {
     setLoading(true)
     try {
       const res = await api.get('/api/quizzes')
-      setQuizzes(res.data?.value ?? res.data ?? [])
-    } catch { toast.error('Failed to load quizzes') }
-    finally { setLoading(false) }
+      const all = res.data?.value ?? res.data ?? []
+      if (role === 'student') {
+        setQuizzes(all.filter((q: Quiz) => q.is_published))
+      } else {
+        setQuizzes(all)
+      }
+    } catch {
+      toast.error('Failed to load quizzes')
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ── Take quiz ──────────────────────────────────────────────────────────────
 
   async function openQuiz(quiz: Quiz) {
+    try {
+      await api.post(`/api/quizzes/${quiz.id}/start`)
+    } catch (e: any) {
+      if (e?.response?.status === 402) {
+        toast.error('You must pay your fees before taking this quiz')
+        return
+      }
+    }
     try {
       const res = await api.get(`/api/quizzes/${quiz.id}`)
       setActiveQuiz(res.data)
@@ -119,11 +231,7 @@ export default function QuizzesPage() {
         setTimeLeft(quiz.time_limit_minutes * 60)
       }
     } catch (e: any) {
-      if (e?.response?.status === 402) {
-        toast.error('You must pay your fees before taking this quiz')
-      } else {
-        toast.error(e?.response?.data?.message ?? 'Failed to load quiz')
-      }
+      toast.error(e?.response?.data?.message ?? 'Failed to load quiz')
     }
   }
 
@@ -155,7 +263,7 @@ export default function QuizzesPage() {
     setSubmitted(true)
   }
 
-  // ── Toggle publish ─────────────────────────────────────────────────────────
+  // ── Manage quizzes ─────────────────────────────────────────────────────────
 
   async function togglePublish(quiz: Quiz) {
     try {
@@ -178,7 +286,13 @@ export default function QuizzesPage() {
     }
   }
 
-  // ── Create quiz ────────────────────────────────────────────────────────────
+  // ── Bulk upload trigger ────────────────────────────────────────────────────
+
+  function handleBulkUpload(quiz: Quiz) {
+    setBulkQuiz(quiz)
+  }
+
+  // ── Create quiz helpers ────────────────────────────────────────────────────
 
   function addQuestion() {
     setQuestions(q => [...q, {
@@ -187,7 +301,7 @@ export default function QuizzesPage() {
         { option_text: '', is_correct: true },
         { option_text: '', is_correct: false },
         { option_text: '', is_correct: false },
-      ]
+      ],
     }])
   }
 
@@ -203,24 +317,21 @@ export default function QuizzesPage() {
     setQuestions(q => q.map((item, i) => i !== qi ? item : {
       ...item,
       options: item.options.map((opt, j) => {
-        if (field === 'is_correct') {
-          // radio — only one correct
-          return { ...opt, is_correct: j === oi }
-        }
+        if (field === 'is_correct') return { ...opt, is_correct: j === oi }
         return j === oi ? { ...opt, [field]: value } : opt
-      })
+      }),
     }))
   }
 
   function addOption(qi: number) {
     setQuestions(q => q.map((item, i) => i !== qi ? item : {
-      ...item, options: [...item.options, { option_text: '', is_correct: false }]
+      ...item, options: [...item.options, { option_text: '', is_correct: false }],
     }))
   }
 
   function removeOption(qi: number, oi: number) {
     setQuestions(q => q.map((item, i) => i !== qi ? item : {
-      ...item, options: item.options.filter((_, j) => j !== oi)
+      ...item, options: item.options.filter((_, j) => j !== oi),
     }))
   }
 
@@ -236,14 +347,16 @@ export default function QuizzesPage() {
           question_text: q.question_text,
           points: q.points,
           options: q.options,
-        }))
+        })),
       })
       toast.success('Quiz created')
       setShowCreate(false)
       loadQuizzes()
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Failed to create quiz')
-    } finally { setSaving(false) }
+    } finally {
+      setSaving(false)
+    }
   }
 
   const inp = "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
@@ -253,7 +366,7 @@ export default function QuizzesPage() {
   if (takingQuiz && activeQuiz) {
     return (
       <div className="max-w-2xl mx-auto space-y-5">
-        {/* Header */}
+        {/* same as before, omitted for brevity but keep from your original file */}
         <div className="bg-white border rounded-xl px-5 py-4 flex items-center justify-between">
           <div>
             <h2 className="font-bold text-lg">{activeQuiz.title}</h2>
@@ -268,20 +381,19 @@ export default function QuizzesPage() {
               </div>
             )}
             <button onClick={() => setTakingQuiz(false)}
-              className="text-sm text-gray-500 hover:text-gray-900">✕ Exit</button>
+              className="text-sm text-gray-500 hover:text-gray-900">
+              ✕ Exit
+            </button>
           </div>
         </div>
 
-        {/* Result */}
         {submitted && score && (
           <div className={`rounded-xl px-5 py-4 border text-center ${
             score.earned / score.total >= 0.7
               ? 'bg-green-50 border-green-200'
               : 'bg-red-50 border-red-200'
           }`}>
-            <div className="text-3xl font-bold mb-1">
-              {score.earned} / {score.total}
-            </div>
+            <div className="text-3xl font-bold mb-1">{score.earned} / {score.total}</div>
             <div className="text-sm text-gray-600">
               {Math.round((score.earned / score.total) * 100)}% —{' '}
               {score.earned / score.total >= 0.7 ? '🎉 Well done!' : 'Keep practising!'}
@@ -289,10 +401,8 @@ export default function QuizzesPage() {
           </div>
         )}
 
-        {/* Questions */}
         {activeQuiz.quiz_questions.map((q, qi) => {
           const chosen = answers[q.id]
-          // const correct = q.quiz_question_options.find(o => o.is_correct)
           return (
             <div key={q.id} className="bg-white border rounded-xl px-5 py-4 space-y-3">
               <div className="flex items-start justify-between gap-2">
@@ -333,21 +443,14 @@ export default function QuizzesPage() {
           )
         })}
 
-        {/* Submit button */}
-        {!submitted && (
-          <button
-            onClick={submitQuiz}
-            className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-xl transition-colors"
-          >
+        {!submitted ? (
+          <button onClick={submitQuiz}
+            className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-xl transition-colors">
             Submit Quiz
           </button>
-        )}
-
-        {submitted && (
-          <button
-            onClick={() => setTakingQuiz(false)}
-            className="w-full py-3 border hover:bg-gray-50 text-sm font-medium rounded-xl transition-colors"
-          >
+        ) : (
+          <button onClick={() => setTakingQuiz(false)}
+            className="w-full py-3 border hover:bg-gray-50 text-sm font-medium rounded-xl transition-colors">
             Back to Quizzes
           </button>
         )}
@@ -362,17 +465,20 @@ export default function QuizzesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Quizzes</h1>
-          <p className="text-sm text-gray-500">Create and manage quizzes</p>
+          <p className="text-sm text-gray-500">
+            {canManage ? 'Create and manage quizzes' : 'Take available quizzes'}
+          </p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          + Create Quiz
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            + Create Quiz
+          </button>
+        )}
       </div>
 
-      {/* Quiz cards */}
       {loading ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {[1,2,3,4].map(i => (
@@ -384,7 +490,8 @@ export default function QuizzesPage() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {quizzes.map(quiz => (
-            <div key={quiz.id} className="bg-white border rounded-xl p-4 space-y-3 hover:shadow-sm transition-shadow">
+            <div key={quiz.id}
+              className="bg-white border rounded-xl p-4 space-y-3 hover:shadow-sm transition-shadow">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="font-semibold text-gray-900">{quiz.title}</div>
@@ -395,7 +502,9 @@ export default function QuizzesPage() {
                 <div className="flex gap-1 shrink-0">
                   <Badge
                     label={quiz.is_published ? 'Published' : 'Draft'}
-                    color={quiz.is_published ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}
+                    color={quiz.is_published
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-600'}
                   />
                   {quiz.require_payment && (
                     <Badge label="Paid" color="bg-amber-100 text-amber-700" />
@@ -404,47 +513,67 @@ export default function QuizzesPage() {
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                {quiz.classes && <span>📚 {quiz.classes.name}</span>}
-                {quiz.terms && <span>📅 {quiz.terms.name}</span>}
+                {quiz.classes  && <span>📚 {quiz.classes.name}</span>}
+                {quiz.terms    && <span>📅 {quiz.terms.name}</span>}
                 {quiz.subjects && <span>📖 {quiz.subjects.name}</span>}
                 {quiz.time_limit_minutes && <span>⏱ {quiz.time_limit_minutes} min</span>}
               </div>
 
-              <div className="flex gap-2 pt-1">
+              <div className="flex gap-2 pt-1 flex-wrap">
                 <button
                   onClick={() => openQuiz(quiz)}
-                  className="flex-1 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors"
+                  className="py-1.5 px-3 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors"
                 >
                   Take Quiz
                 </button>
-                <button
-                  onClick={() => togglePublish(quiz)}
-                  className="px-3 py-1.5 border hover:bg-gray-50 text-xs font-medium rounded-lg transition-colors"
-                >
-                  {quiz.is_published ? 'Unpublish' : 'Publish'}
-                </button>
-                <button
-                  onClick={() => deleteQuiz(quiz.id)}
-                  className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium rounded-lg transition-colors"
-                >
-                  Delete
-                </button>
+                {canManage && (
+                  <>
+                    <button
+                      onClick={() => togglePublish(quiz)}
+                      className="py-1.5 px-3 border hover:bg-gray-50 text-xs font-medium rounded-lg transition-colors"
+                    >
+                      {quiz.is_published ? 'Unpublish' : 'Publish'}
+                    </button>
+                    <button
+                      onClick={() => handleBulkUpload(quiz)}
+                      className="py-1.5 px-3 border hover:bg-gray-50 text-xs font-medium rounded-lg transition-colors"
+                    >
+                      📤 Bulk
+                    </button>
+                    <button
+                      onClick={() => deleteQuiz(quiz.id)}
+                      className="py-1.5 px-3 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium rounded-lg transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Create quiz modal */}
+      {/* Bulk Upload Modal */}
+      {bulkQuiz && (
+        <BulkUploadModal
+          quiz={bulkQuiz}
+          onClose={() => setBulkQuiz(null)}
+          onSuccess={loadQuizzes}
+        />
+      )}
+
+      {/* Create quiz modal (your existing code) */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto py-8">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 p-6 space-y-4">
+            {/* ... keep the rest of your create quiz modal exactly as before ... */}
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-lg">Create Quiz</h3>
-              <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <button onClick={() => setShowCreate(false)}
+                className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
 
-            {/* Basic info */}
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
@@ -469,7 +598,9 @@ export default function QuizzesPage() {
                 <select className={inp} value={createForm.term_id}
                   onChange={e => setCreateForm(f => ({ ...f, term_id: e.target.value }))}>
                   <option value="">— Select —</option>
-                  {terms.map(t => <option key={t.id} value={t.id}>{t.name} {t.academic_year}</option>)}
+                  {terms.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} {t.academic_year}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -482,22 +613,29 @@ export default function QuizzesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Time Limit (mins)</label>
-                <input className={inp} type="number" min={1} value={createForm.time_limit_minutes}
+                <input className={inp} type="number" min={1}
+                  value={createForm.time_limit_minutes}
                   onChange={e => setCreateForm(f => ({ ...f, time_limit_minutes: Number(e.target.value) }))} />
               </div>
               <div className="col-span-2 flex items-center gap-2">
                 <input type="checkbox" id="req_pay" checked={createForm.require_payment}
                   onChange={e => setCreateForm(f => ({ ...f, require_payment: e.target.checked }))} />
-                <label htmlFor="req_pay" className="text-sm text-gray-700">Require fee payment to take this quiz</label>
+                <label htmlFor="req_pay" className="text-sm text-gray-700">
+                  Require fee payment to take this quiz
+                </label>
               </div>
             </div>
 
-            {/* Questions */}
+            {/* Questions (same as before) */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <span className="font-medium text-sm text-gray-700">Questions ({questions.length})</span>
+                <span className="font-medium text-sm text-gray-700">
+                  Questions ({questions.length})
+                </span>
                 <button onClick={addQuestion}
-                  className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Question</button>
+                  className="text-xs text-violet-600 hover:text-violet-800 font-medium">
+                  + Add Question
+                </button>
               </div>
               <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
                 {questions.map((q, qi) => (
@@ -515,18 +653,23 @@ export default function QuizzesPage() {
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-gray-500">Points:</label>
                       <input className="border rounded px-2 py-1 text-sm w-16" type="number" min={1}
-                        value={q.points} onChange={e => updateQuestion(qi, 'points', Number(e.target.value))} />
+                        value={q.points}
+                        onChange={e => updateQuestion(qi, 'points', Number(e.target.value))} />
                     </div>
                     <div className="space-y-2">
-                      <div className="text-xs text-gray-500 font-medium">Options (select correct answer)</div>
+                      <div className="text-xs text-gray-500 font-medium">
+                        Options (select correct answer)
+                      </div>
                       {q.options.map((opt, oi) => (
                         <div key={oi} className="flex items-center gap-2">
                           <input type="radio" name={`q${qi}_correct`} checked={opt.is_correct}
                             onChange={() => updateOption(qi, oi, 'is_correct', true)} />
-                          <input className="flex-1 border rounded-lg px-3 py-1.5 text-sm"
+                          <input
+                            className="flex-1 border rounded-lg px-3 py-1.5 text-sm"
                             placeholder={`Option ${oi + 1}`}
                             value={opt.option_text}
-                            onChange={e => updateOption(qi, oi, 'option_text', e.target.value)} />
+                            onChange={e => updateOption(qi, oi, 'option_text', e.target.value)}
+                          />
                           {q.options.length > 2 && (
                             <button onClick={() => removeOption(qi, oi)}
                               className="text-xs text-red-400 hover:text-red-600">✕</button>
@@ -534,7 +677,9 @@ export default function QuizzesPage() {
                         </div>
                       ))}
                       <button onClick={() => addOption(qi)}
-                        className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Option</button>
+                        className="text-xs text-violet-600 hover:text-violet-800 font-medium">
+                        + Add Option
+                      </button>
                     </div>
                   </div>
                 ))}

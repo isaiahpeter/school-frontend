@@ -28,18 +28,22 @@ export const SchoolProvider = ({ children }: { children: ReactNode }) => {
   const [school, setSchool]   = useState<School | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchSchools = async () => {
-    try {
-      const { data } = await api.get('/api/schools')
-      const list: School[] = data?.value ?? data ?? []
-      setSchools(list)
-      setSchool(list[0] ?? null)
-    } catch (err) {
+  // Replace fetchSchools with a silent fail for non-admins
+const fetchSchools = async () => {
+  try {
+    const { data } = await api.get('/api/schools')
+    const list: School[] = data?.value ?? data ?? []
+    setSchools(list)
+    setSchool(list[0] ?? null)
+  } catch (err: any) {
+    // 403 means student/teacher role — not an error, just no school data
+    if (err?.response?.status !== 403) {
       console.error('Failed to fetch schools', err)
-    } finally {
-      setLoading(false)
     }
+  } finally {
+    setLoading(false)
   }
+}
 
   useEffect(() => {
     const token = localStorage.getItem('school_jwt')

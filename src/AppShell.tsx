@@ -7,13 +7,17 @@ const ALL_NAV = [
   { label: 'Dashboard', to: '/dashboard',  icon: '🏠', roles: ['admin','teacher','student','parent'] },
   { label: 'Students',  to: '/students',   icon: '👨‍🎓', roles: ['admin','teacher'] },
   { label: 'Results',   to: '/results',    icon: '📊', roles: ['admin','teacher','student','parent'] },
-  { label: 'Fees',      to: '/fees',       icon: '💰', roles: ['admin','student','parent'] },
+  { label: 'Fees',      to: '/fees',       icon: '💰', roles: ['admin','parent'] },
   { label: 'Attendance',to: '/attendance', icon: '✅', roles: ['admin','teacher','student'] },
   { label: 'Chat',      to: '/chat',       icon: '💬', roles: ['admin','teacher','student'] },
   { label: 'Quizzes',   to: '/quizzes',    icon: '📝', roles: ['admin','teacher','student'] },
   { label: 'Admin',     to: '/admin',      icon: '⚙️',  roles: ['admin'] },
   { label: 'Settings',  to: '/settings',   icon: '🔧', roles: ['admin','teacher','student','parent'] },
   { label: 'Enter Marks', to: '/enter-marks', icon: '✏️', roles: ['admin','teacher'] },
+  { label: 'Comments', to: '/comments', icon: '💬', roles: ['admin','teacher'] },
+  { label: 'My Child', to: '/parent',   icon: '👨‍👩‍👧', roles: ['parent'] },
+  { label: 'Student Profiles',to: '/student-profiles', icon: '✏️', roles: ['admin'] },
+  { label: 'Create User',     to: '/create-user',      icon: '➕', roles: ['admin'] },
 ]
 
 export default function AppShell() {

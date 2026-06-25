@@ -30,18 +30,26 @@ export default function StudentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!id) return
-    api.get('/api/students')
-      .then(res => {
-        const list: Student[] = res.data?.value ?? res.data ?? []
-        const found = list.find(s => s.id === id) ?? null
-        setStudent(found)
-        if (!found) setError('Student not found')
-      })
-      .catch(() => setError('Failed to load student'))
-      .finally(() => setLoading(false))
-  }, [id])
+
+useEffect(() => {
+  if (!id) return
+  setLoading(true)
+
+  // Try admin endpoint first, fall back to empty if 403
+  api.get('/api/students')
+    .then(res => {
+      const list = res.data?.value ?? res.data ?? []
+      const found = list.find((s: any) => s.id === id) ?? null
+      setStudent(found)
+      if (!found) setError('Student not found')
+    })
+    .catch(() => {
+      // Student role can't access /api/students
+      // Show a permission error instead of crashing
+      setError('You do not have permission to view other student profiles')
+    })
+    .finally(() => setLoading(false))
+}, [id])
 
   const field = (label: string, value?: string | null) => (
     <div className="flex gap-2 text-sm">

@@ -18,8 +18,21 @@ interface Message {
   users: { full_name: string }
 }
 
+interface BlockedStudent {
+  id: string
+  student_id: string
+  class_id: string
+  reason?: string
+  expires_at?: string
+  created_at: string
+  students: { id: string; users: { full_name: string } }
+}
+
 export default function ChatPage() {
   const { user } = useAuth()
+  const role = (user as any)?.role ?? 'student'
+  const canManage = role === 'admin' || role === 'teacher'
+
   const [rooms, setRooms] = useState<Room[]>([])
   const [activeRoom, setActiveRoom] = useState<Room | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -31,18 +44,28 @@ export default function ChatPage() {
   const [newRoomClass, setNewRoomClass] = useState('')
   const [creatingRoom, setCreatingRoom] = useState(false)
 
+  // Block management
+  const [showBlockModal, setShowBlockModal] = useState(false)
+  const [blockedStudents, setBlockedStudents] = useState<BlockedStudent[]>([])
+  const [loadingBlocked, setLoadingBlocked] = useState(false)
+  const [blockStudentId, setBlockStudentId] = useState('')
+  const [blockReason, setBlockReason] = useState('')
+  const [blockExpires, setBlockExpires] = useState('')
+  const [enrolledStudents, setEnrolledStudents] = useState<{ id: string; name: string }[]>([])
+  const [loadingEnrolled, setLoadingEnrolled] = useState(false)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const activeRoomRef = useRef<Room | null>(null)
 
   const currentUserId = (user as any)?.id
 
-  // Keep ref in sync with state
   useEffect(() => {
     activeRoomRef.current = activeRoom
   }, [activeRoom])
 
-  // Load rooms
+  // Load rooms and classes
+  // 
   useEffect(() => {
     api.get('/api/chat/rooms')
       .then(res => setRooms(res.data?.value ?? res.data ?? []))
@@ -53,7 +76,6 @@ export default function ChatPage() {
       .catch(() => {})
   }, [])
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
@@ -66,11 +88,10 @@ export default function ChatPage() {
       const list: Message[] = res.data?.value ?? res.data ?? []
       setMessages(list.slice().reverse())
     } catch {
-      // silent on poll failures
+      // silent
     }
   }, [])
 
-  // Start/stop polling when active room changes
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current)
     if (!activeRoom) return
@@ -86,7 +107,6 @@ export default function ChatPage() {
     const draft = text.trim()
     setText('')
 
-    // Optimistic message
     const optimistic: Message = {
       id: `temp-${Date.now()}`,
       sender_id: currentUserId ?? '',
@@ -126,6 +146,80 @@ export default function ChatPage() {
     }
   }
 
+  // Block management functions
+
+  async function openBlockModal(room: Room) {
+    if (!canManage) return
+    setShowBlockModal(true)
+    setLoadingBlocked(true)
+    setBlockedStudents([])
+    setBlockStudentId('')
+    setBlockReason('')
+    setBlockExpires('')
+    try {
+      // Fetch blocked students
+      const resBlocked = await api.get(`/api/chat/blocked?class_id=${room.class_id}`)
+      setBlockedStudents(resBlocked.data?.value ?? resBlocked.data ?? [])
+    } catch (e) {
+      toast.error('Failed to load blocked students')
+    } finally {
+      setLoadingBlocked(false)
+    }
+
+    // Fetch enrolled students for blocking (only those not already blocked)
+    try {
+      setLoadingEnrolled(true)
+      const resEnroll = await api.get(`/api/enrollments?class_id=${room.class_id}`)
+      const enrollments = resEnroll.data?.value ?? resEnroll.data ?? []
+      const studentMap: { id: string; name: string }[] = []
+      enrollments.forEach((e: any) => {
+        const sid = e.student_id
+        const name = e.students?.users?.full_name || e.student_id
+        if (!studentMap.find(s => s.id === sid)) studentMap.push({ id: sid, name })
+      })
+      setEnrolledStudents(studentMap)
+    } catch (e) {
+      setEnrolledStudents([])
+    } finally {
+      setLoadingEnrolled(false)
+    }
+  }
+
+  async function addBlock() {
+    if (!blockStudentId || !activeRoom) return toast.error('Select a student')
+    try {
+      const body: any = {
+        student_id: blockStudentId,
+        class_id: activeRoom.class_id,
+      }
+      if (blockReason) body.reason = blockReason
+      if (blockExpires) body.expires_at = new Date(blockExpires).toISOString()
+      await api.post('/api/chat/block', body)
+      toast.success('Student blocked')
+      // Refresh list
+      const res = await api.get(`/api/chat/blocked?class_id=${activeRoom.class_id}`)
+      setBlockedStudents(res.data?.value ?? res.data ?? [])
+      setBlockStudentId('')
+      setBlockReason('')
+      setBlockExpires('')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to block student')
+    }
+  }
+
+  async function unblockStudent(studentId: string) {
+    if (!activeRoom) return
+    try {
+      await api.post('/api/chat/unblock', { student_id: studentId, class_id: activeRoom.class_id })
+      toast.success('Student unblocked')
+      // Refresh
+      const res = await api.get(`/api/chat/blocked?class_id=${activeRoom.class_id}`)
+      setBlockedStudents(res.data?.value ?? res.data ?? [])
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to unblock')
+    }
+  }
+
   function formatTime(iso: string) {
     return new Date(iso).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })
   }
@@ -136,7 +230,6 @@ export default function ChatPage() {
     })
   }
 
-  // Group messages by date — use index in key to avoid duplicate date keys
   const grouped = messages.reduce<{ date: string; items: Message[] }[]>((groups, msg) => {
     const date = formatDate(msg.created_at)
     const last = groups[groups.length - 1]
@@ -154,12 +247,14 @@ export default function ChatPage() {
           <h1 className="text-2xl font-bold">Chat</h1>
           <p className="text-sm text-gray-500">Class-based messaging</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          + New Room
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            + New Room
+          </button>
+        )}
       </div>
 
       <div className="flex gap-4 h-[70vh]">
@@ -205,14 +300,24 @@ export default function ChatPage() {
           ) : (
             <>
               {/* Header */}
-              <div className="px-4 py-3 border-b flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-violet-100 flex items-center justify-center text-violet-700 font-bold text-sm">
-                  {activeRoom.classes?.name[0]}
+              <div className="px-4 py-3 border-b flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-violet-100 flex items-center justify-center text-violet-700 font-bold text-sm">
+                    {activeRoom.classes?.name[0]}
+                  </div>
+                  <div>
+                    <div className="font-medium text-sm">{activeRoom.classes?.name}</div>
+                    <div className="text-xs text-gray-500">Section {activeRoom.classes?.section}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-medium text-sm">{activeRoom.classes?.name}</div>
-                  <div className="text-xs text-gray-500">Section {activeRoom.classes?.section}</div>
-                </div>
+                {canManage && (
+                  <button
+                    onClick={() => openBlockModal(activeRoom)}
+                    className="px-3 py-1.5 border rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    ⛔ Manage Blocks
+                  </button>
+                )}
               </div>
 
               {/* Messages */}
@@ -305,6 +410,90 @@ export default function ChatPage() {
             >
               {creatingRoom ? 'Creating…' : 'Create Room'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Block management modal */}
+      {showBlockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Manage Blocked Students</h3>
+              <button onClick={() => setShowBlockModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            {/* Add block form */}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Block a student</label>
+              
+              <select
+  className={inp}
+  value={blockStudentId}
+  onChange={e => setBlockStudentId(e.target.value)}
+  disabled={loadingEnrolled}
+>
+                <option value="">— Select student —</option>
+                {enrolledStudents.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <input
+                className={inp}
+                placeholder="Reason (optional)"
+                value={blockReason}
+                onChange={e => setBlockReason(e.target.value)}
+              />
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-500">Expires (optional)</label>
+                <input
+                  type="datetime-local"
+                  className="border rounded px-2 py-1 text-xs"
+                  value={blockExpires}
+                  onChange={e => setBlockExpires(e.target.value)}
+                />
+              </div>
+              <button
+                onClick={addBlock}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg"
+              >
+                Block
+              </button>
+            </div>
+
+            {/* Blocked list */}
+            <div>
+              <div className="text-sm font-medium text-gray-700 mb-2">
+                Currently Blocked ({blockedStudents.length})
+              </div>
+              {loadingBlocked ? (
+                <div className="text-xs text-gray-400 py-2">Loading…</div>
+              ) : blockedStudents.length === 0 ? (
+                <div className="text-xs text-gray-400 py-2">No blocked students</div>
+              ) : (
+                <ul className="space-y-2 max-h-40 overflow-y-auto">
+                  {blockedStudents.map(block => (
+                    <li key={block.id} className="flex items-center justify-between border rounded-lg px-3 py-2 text-sm">
+                      <div>
+                        <span className="font-medium">{block.students?.users?.full_name}</span>
+                        {block.reason && <span className="text-xs text-gray-500 ml-2">({block.reason})</span>}
+                        {block.expires_at && (
+                          <span className="text-xs text-gray-400 ml-2">
+                            until {new Date(block.expires_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => unblockStudent(block.student_id)}
+                        className="text-xs text-green-600 hover:underline"
+                      >
+                        Unblock
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         </div>
       )}

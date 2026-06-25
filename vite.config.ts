@@ -25,6 +25,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        mode: 'development', // <-- CHANGE THIS LINE TO BYPASS TERSER MINIFICATION
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
@@ -40,4 +41,9 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    minify: 'esbuild',
+    target: 'esnext',    
+    sourcemap: false,
+  },
 })

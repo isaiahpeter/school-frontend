@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/apiClient'
+import { useAuth } from '../hooks/useAuth'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -7,6 +8,11 @@ interface Term {
   id: string
   name: string
   academic_year: string
+}
+
+interface Child {
+  student_id: string
+  students: { users: { full_name: string } }
 }
 
 interface Result {
@@ -21,12 +27,16 @@ interface Result {
   percentage: number
   grade: string
   remark: string
-  student_name: string
-  subject_name: string
-  class_name: string
-  term_name: string
-  subjects: { code: string; name: string }
-  students: { id: string; users: { full_name: string } }
+  student_name?: string
+  subject_name?: string
+  subjects?: { code: string; name: string }
+}
+
+interface StudentOverall {
+  totalScore: number
+  percentage: string
+  grade: string
+  remark: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -62,71 +72,165 @@ function ScoreBar({ value, max }: { value: number; max: number }) {
   )
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ResultsPage() {
+  const { user } = useAuth()
+  const role = (user as any)?.role ?? 'student'
+  const isStudent = role === 'student'
+  const isParent  = role === 'parent'
+  //const isAdminOrTeacher = role === 'admin' || role === 'teacher'
+
   const [terms, setTerms] = useState<Term[]>([])
+  const [children, setChildren] = useState<Child[]>([])            // for parent
   const [results, setResults] = useState<Result[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedTerm, setSelectedTerm] = useState<string>('')
-  const [selectedStudent, setSelectedStudent] = useState<string>('all')
+  const [selectedTerm, setSelectedTerm] = useState('')
+  const [selectedStudent, setSelectedStudent] = useState('all')
+  const [myStudentId, setMyStudentId] = useState('')              // student's own id
   const [activeTab, setActiveTab] = useState<'results' | 'report'>('results')
   const [reportHtml, setReportHtml] = useState<string | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
 
-  // Load terms on mount
+  // For student: store the overall summary from my-results
+  const [studentOverall, setStudentOverall] = useState<StudentOverall | null>(null)
+
+  // ── Load terms and, for parents, children ──
   useEffect(() => {
-    api.get('/api/terms')
-      .then(res => {
-        const list: Term[] = res.data?.value ?? res.data ?? []
-        setTerms(list)
-        if (list.length > 0) setSelectedTerm(list[0].id)
+    const promises: Promise<any>[] = [api.get('/api/terms')]
+    if (isParent) {
+      promises.push(api.get('/api/users/my-children'))
+    }
+    Promise.all(promises)
+      .then(([termsRes, childrenRes]) => {
+        const termList: Term[] = termsRes.data?.value ?? termsRes.data ?? []
+        setTerms(termList)
+        if (termList.length > 0) setSelectedTerm(termList[0].id)
+
+        if (isParent && childrenRes) {
+          const childList: Child[] = childrenRes.data?.value ?? childrenRes.data ?? []
+          setChildren(childList)
+          if (childList.length > 0) {
+            setSelectedStudent(childList[0].student_id)
+          }
+        }
       })
-      .catch(() => setError('Failed to load terms'))
+      .catch(() => setError('Failed to load data'))
   }, [])
 
-  // Load results when term changes
+  // ── Load results when term or student selection changes ──
   useEffect(() => {
     if (!selectedTerm) return
     setLoading(true)
     setError(null)
-    api.get('/api/results', { params: { term_id: selectedTerm } })
-      .then(res => {
-        setResults(res.data?.value ?? res.data ?? [])
-        setSelectedStudent('all')
-      })
-      .catch(() => setError('Failed to load results'))
-      .finally(() => setLoading(false))
-  }, [selectedTerm])
 
-  // Unique students in current results
+    // Reset overall for non‑students
+    if (!isStudent) setStudentOverall(null)
+
+    if (isStudent) {
+      // ───── Student: use dedicated endpoint ─────
+      api.get('/api/results/my-results', { params: { term_id: selectedTerm } })
+        .then(res => {
+          const data = res.data
+          const subjectsArray: Result[] = Array.isArray(data)
+            ? data
+            : data?.subjects ?? data?.value ?? []
+          setResults(subjectsArray)
+
+          const sid = data?.student_id ?? subjectsArray[0]?.student_id ?? ''
+          setMyStudentId(sid)
+          if (sid) setSelectedStudent(sid)
+
+          if (data?.overall) setStudentOverall(data.overall)
+          else setStudentOverall(null)
+        })
+        .catch(() => setError('Failed to load your results'))
+        .finally(() => setLoading(false))
+    } else if (isParent && selectedStudent && selectedStudent !== 'all') {
+      // ───── Parent: fetch results for selected child ─────
+      api.get(`/api/results/student/${selectedStudent}/term/${selectedTerm}`)
+        .then(res => {
+          const data = res.data
+          const arr: Result[] = Array.isArray(data) ? data : data?.value ?? []
+          setResults(arr)
+        })
+        .catch(() => setError('Failed to load results'))
+        .finally(() => setLoading(false))
+    } else {
+      // ───── Admin/Teacher: list all results ─────
+      api.get('/api/results', { params: { term_id: selectedTerm } })
+        .then(res => {
+          const all: Result[] = res.data?.value ?? res.data ?? []
+          setResults(all)
+          if (!isParent) setSelectedStudent('all')
+        })
+        .catch(() => setError('Failed to load results'))
+        .finally(() => setLoading(false))
+    }
+  }, [selectedTerm, selectedStudent, isStudent, isParent])
+
+  // Unique students from results (admin/teacher view)
   const students = Array.from(
-    new Map(results.map(r => [r.student_id, r.student_name])).entries()
+    new Map(results.map(r => [r.student_id, r.student_name ?? ''])).entries()
   ).map(([id, name]) => ({ id, name }))
 
   // Filtered results
-  const filtered = selectedStudent === 'all'
+  const filtered = (isStudent || isParent)
     ? results
-    : results.filter(r => r.student_id === selectedStudent)
+    : selectedStudent === 'all'
+      ? results
+      : results.filter(r => r.student_id === selectedStudent)
 
-  // Summary stats for filtered set
+  // Summary stats (compute for any role)
   const avg = filtered.length
     ? Math.round(filtered.reduce((s, r) => s + r.percentage, 0) / filtered.length)
     : 0
   const highest = filtered.length ? Math.max(...filtered.map(r => r.percentage)) : 0
   const lowest = filtered.length ? Math.min(...filtered.map(r => r.percentage)) : 0
 
+  // Compute overall for parent (since the endpoint returns raw results, not aggregated)
+  const computedOverall: StudentOverall | null = (isParent && filtered.length > 0)
+    ? {
+        totalScore: filtered.reduce((sum, r) => sum + r.total_score, 0),
+        percentage: avg.toFixed(1),
+        grade: getGradeFromPercentage(avg),
+        remark: getRemarkFromPercentage(avg),
+      }
+    : null
+
+  // Helper functions for parent overall
+  function getGradeFromPercentage(pct: number) {
+    if (pct >= 80) return 'A+'
+    if (pct >= 70) return 'A'
+    if (pct >= 60) return 'B'
+    if (pct >= 50) return 'C'
+    if (pct >= 40) return 'D'
+    if (pct >= 30) return 'E'
+    return 'F'
+  }
+  function getRemarkFromPercentage(pct: number) {
+    if (pct >= 80) return 'Excellent'
+    if (pct >= 70) return 'Very Good'
+    if (pct >= 60) return 'Good'
+    if (pct >= 50) return 'Average'
+    if (pct >= 40) return 'Fair'
+    return 'Below Ave'
+  }
+
+  // The student_id to use for report card
+  const reportStudentId = isStudent ? myStudentId : selectedStudent
+
   // Load HTML report card
   async function loadReport() {
-    if (!selectedTerm || selectedStudent === 'all') return
+    if (!selectedTerm || !reportStudentId || reportStudentId === 'all') return
     setReportLoading(true)
     setReportHtml(null)
     try {
-      const res = await api.get(
-        `/api/results/report/${selectedStudent}/term/${selectedTerm}`,
-        { params: { format: 'html' }, responseType: 'text' }
-      )
+      const res = await api.get(`/api/results/report/${reportStudentId}/term/${selectedTerm}`, {
+        params: { format: 'html' },
+        responseType: 'text',
+      })
       setReportHtml(res.data)
     } catch {
       setReportHtml('<p style="color:red;padding:1rem">Failed to load report card.</p>')
@@ -136,18 +240,64 @@ export default function ResultsPage() {
   }
 
   useEffect(() => {
-    if (activeTab === 'report' && selectedStudent !== 'all') {
-      loadReport()
-    }
-  }, [activeTab, selectedStudent, selectedTerm])
+    if (activeTab === 'report') loadReport()
+  }, [activeTab, reportStudentId, selectedTerm])
+
+  const showReportTab = isStudent ? !!myStudentId : (isParent ? selectedStudent !== 'all' : selectedStudent !== 'all')
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Results</h1>
-        <p className="text-sm text-gray-500">View and analyse student academic results</p>
+        <p className="text-sm text-gray-500">
+          {isStudent ? 'Your academic results' : isParent ? 'Your child\'s academic progress' : 'View and analyse student academic results'}
+        </p>
       </div>
+
+      {/* Student overall card (student) */}
+      {isStudent && studentOverall && (
+        <div className="bg-white border rounded-xl px-4 py-3 grid grid-cols-2 gap-3">
+          <div>
+            <span className="text-xs text-gray-500">Total Score</span>
+            <div className="text-2xl font-bold">{studentOverall.totalScore}</div>
+          </div>
+          <div>
+            <span className="text-xs text-gray-500">Percentage</span>
+            <div className="text-2xl font-bold">{studentOverall.percentage}%</div>
+          </div>
+          <div>
+            <span className="text-xs text-gray-500">Grade</span>
+            <div className="text-xl font-bold"><GradeBadge grade={studentOverall.grade} /></div>
+          </div>
+          <div>
+            <span className="text-xs text-gray-500">Remark</span>
+            <div className="text-lg font-medium text-gray-700">{studentOverall.remark}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Parent overall card (computed) */}
+      {isParent && computedOverall && (
+        <div className="bg-white border rounded-xl px-4 py-3 grid grid-cols-2 gap-3">
+          <div>
+            <span className="text-xs text-gray-500">Total Score</span>
+            <div className="text-2xl font-bold">{computedOverall.totalScore}</div>
+          </div>
+          <div>
+            <span className="text-xs text-gray-500">Percentage</span>
+            <div className="text-2xl font-bold">{computedOverall.percentage}%</div>
+          </div>
+          <div>
+            <span className="text-xs text-gray-500">Grade</span>
+            <div className="text-xl font-bold"><GradeBadge grade={computedOverall.grade} /></div>
+          </div>
+          <div>
+            <span className="text-xs text-gray-500">Remark</span>
+            <div className="text-lg font-medium text-gray-700">{computedOverall.remark}</div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -161,21 +311,41 @@ export default function ResultsPage() {
           ))}
         </select>
 
-        <select
-          className="border rounded-lg px-3 py-2 text-sm bg-white"
-          value={selectedStudent}
-          onChange={e => setSelectedStudent(e.target.value)}
-        >
-          <option value="all">All Students</option>
-          {students.map(s => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+        {/* Child selector for parent */}
+        {isParent && children.length > 0 && (
+          <select
+            className="border rounded-lg px-3 py-2 text-sm bg-white"
+            value={selectedStudent}
+            onChange={e => setSelectedStudent(e.target.value)}
+          >
+            {children.map(c => (
+              <option key={c.student_id} value={c.student_id}>
+                {c.students?.users?.full_name}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* Student selector for admin/teacher */}
+        {!isStudent && !isParent && (
+          <select
+            className="border rounded-lg px-3 py-2 text-sm bg-white"
+            value={selectedStudent}
+            onChange={e => setSelectedStudent(e.target.value)}
+          >
+            <option value="all">All Students</option>
+            {students.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Error */}
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{error}</div>
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          {error}
+        </div>
       )}
 
       {/* Summary cards */}
@@ -184,7 +354,7 @@ export default function ResultsPage() {
           {[
             { label: 'Average', value: `${avg}%` },
             { label: 'Highest', value: `${highest}%` },
-            { label: 'Lowest', value: `${lowest}%` },
+            { label: 'Lowest',  value: `${lowest}%` },
           ].map(({ label, value }) => (
             <div key={label} className="bg-white border rounded-xl px-4 py-3">
               <div className="text-xs text-gray-500 uppercase tracking-wide">{label}</div>
@@ -194,17 +364,15 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* Tabs — only show when a single student is selected */}
-      {selectedStudent !== 'all' && (
+      {/* Tabs */}
+      {showReportTab && (
         <div className="flex gap-1 border-b">
           {(['results', 'report'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors ${
-                activeTab === tab
-                  ? 'border-violet-600 text-violet-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
+                activeTab === tab ? 'border-violet-600 text-violet-600' : 'border-transparent text-gray-500 hover:text-gray-900'
               }`}
             >
               {tab === 'report' ? 'Report Card' : 'Marks'}
@@ -214,7 +382,7 @@ export default function ResultsPage() {
       )}
 
       {/* Results table */}
-      {(selectedStudent === 'all' || activeTab === 'results') && (
+      {activeTab === 'results' && (
         <div className="bg-white border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b text-sm text-gray-500">
             {loading ? 'Loading…' : `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`}
@@ -223,7 +391,9 @@ export default function ResultsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wide">
                 <tr>
-                  {selectedStudent === 'all' && <th className="px-4 py-3">Student</th>}
+                  {!isStudent && !isParent && selectedStudent === 'all' && (
+                    <th className="px-4 py-3">Student</th>
+                  )}
                   <th className="px-4 py-3">Subject</th>
                   <th className="px-4 py-3">Test /40</th>
                   <th className="px-4 py-3">Exam /60</th>
@@ -236,10 +406,8 @@ export default function ResultsPage() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="animate-pulse">
-                      {Array.from({ length: selectedStudent === 'all' ? 7 : 6 }).map((_, j) => (
-                        <td key={j} className="px-4 py-3">
-                          <div className="h-4 bg-gray-200 rounded w-20" />
-                        </td>
+                      {Array.from({ length: 7 }).map((_, j) => (
+                        <td key={j} className="px-4 py-3"><div className="h-4 bg-gray-200 rounded w-20" /></td>
                       ))}
                     </tr>
                   ))
@@ -252,27 +420,19 @@ export default function ResultsPage() {
                 ) : (
                   filtered.map(r => (
                     <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                      {selectedStudent === 'all' && (
+                      {!isStudent && !isParent && selectedStudent === 'all' && (
                         <td className="px-4 py-3 font-medium text-gray-900">
-                          {r.student_name}
+                          {r.student_name ?? r.subjects?.code}
                         </td>
                       )}
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">{r.subjects?.name ?? r.subject_name}</div>
                         <div className="text-xs text-gray-400">{r.subjects?.code}</div>
                       </td>
-                      <td className="px-4 py-3 w-28">
-                        <ScoreBar value={r.test_score} max={40} />
-                      </td>
-                      <td className="px-4 py-3 w-28">
-                        <ScoreBar value={r.exam_score} max={60} />
-                      </td>
-                      <td className="px-4 py-3 w-28">
-                        <ScoreBar value={r.total_score} max={100} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <GradeBadge grade={r.grade} />
-                      </td>
+                      <td className="px-4 py-3 w-28"><ScoreBar value={r.test_score} max={40} /></td>
+                      <td className="px-4 py-3 w-28"><ScoreBar value={r.exam_score} max={60} /></td>
+                      <td className="px-4 py-3 w-28"><ScoreBar value={r.total_score} max={100} /></td>
+                      <td className="px-4 py-3"><GradeBadge grade={r.grade} /></td>
                       <td className="px-4 py-3 text-gray-600">{r.remark}</td>
                     </tr>
                   ))
@@ -283,8 +443,8 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* Report card iframe */}
-      {selectedStudent !== 'all' && activeTab === 'report' && (
+      {/* Report card */}
+      {activeTab === 'report' && (
         <div className="bg-white border rounded-xl overflow-hidden">
           {reportLoading ? (
             <div className="p-10 text-center text-sm text-gray-400 animate-pulse">

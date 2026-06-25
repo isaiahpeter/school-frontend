@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/apiClient'
-
+import { useAuth } from '../hooks/useAuth'
+import toast from 'react-hot-toast'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Term { id: string; name: string; academic_year: string }
 interface Class { id: string; name: string; section: string }
-interface Student { id: string; users: { full_name: string } }
+interface Child { student_id: string; students: { users: { full_name: string } } }
 
 interface FeeItem {
   id: string
@@ -54,9 +55,9 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  success:  'bg-green-100 text-green-700',
-  pending:  'bg-yellow-100 text-yellow-700',
-  failed:   'bg-red-100 text-red-700',
+  success: 'bg-green-100 text-green-700',
+  pending: 'bg-yellow-100 text-yellow-700',
+  failed:  'bg-red-100 text-red-700',
 }
 
 function Badge({ label, color }: { label: string; color: string }) {
@@ -82,26 +83,32 @@ function StatCard({ label, value, sub, highlight }: {
   )
 }
 
-// ─── Tabs ─────────────────────────────────────────────────────────────────────
-
 type Tab = 'structure' | 'balance' | 'history'
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function FeesPage() {
-  const [terms, setTerms]       = useState<Term[]>([])
-  const [classes, setClasses]   = useState<Class[]>([])
-  const [students, setStudents] = useState<Student[]>([])
+  const { user } = useAuth()
+  const role: string = (user as any)?.role ?? 'student'
+  const isStudent = role === 'student'
+  const isParent  = role === 'parent'
+  const isAdminOrTeacher = role === 'admin' || role === 'teacher'
+
+  const [terms,    setTerms]    = useState<Term[]>([])
+  const [classes,  setClasses]  = useState<Class[]>([])
+  const [children, setChildren] = useState<Child[]>([])            // for parents
+  const [students, setStudents] = useState<any[]>([])              // for admin/teacher
 
   const [selectedTerm,    setSelectedTerm]    = useState('')
   const [selectedClass,   setSelectedClass]   = useState('')
+  // For parent/student/admin: the student_id whose fees we're viewing
   const [selectedStudent, setSelectedStudent] = useState('')
 
-  const [tab, setTab] = useState<Tab>('structure')
+  const [tab, setTab] = useState<Tab>(isParent ? 'balance' : (isStudent ? 'balance' : 'structure'))
 
-  const [structure, setStructure]       = useState<FeeStructure | null>(null)
-  const [balance,   setBalance]         = useState<StudentBalance | null>(null)
-  const [payments,  setPayments]        = useState<Payment[]>([])
+  const [structure, setStructure] = useState<FeeStructure | null>(null)
+  const [balance,   setBalance]   = useState<StudentBalance | null>(null)
+  const [payments,  setPayments]  = useState<Payment[]>([])
 
   const [loadingStructure, setLoadingStructure] = useState(false)
   const [loadingBalance,   setLoadingBalance]   = useState(false)
@@ -110,28 +117,58 @@ export default function FeesPage() {
 
   const [error, setError] = useState<string | null>(null)
 
-  // Load dropdowns on mount
+  // ── Load initial data ──────────────────────────────────────────────────────
   useEffect(() => {
-    Promise.all([
-      api.get('/api/terms'),
-      api.get('/api/classes'),
-      api.get('/api/students'),
-    ]).then(([t, c, s]) => {
-      const termList    = t.data?.value ?? t.data ?? []
-      const classList   = c.data?.value ?? c.data ?? []
-      const studentList = s.data?.value ?? s.data ?? []
-      setTerms(termList)
-      setClasses(classList)
-      setStudents(studentList)
-      if (termList[0])    setSelectedTerm(termList[0].id)
-      if (classList[0])   setSelectedClass(classList[0].id)
-      if (studentList[0]) setSelectedStudent(studentList[0].id)
-    }).catch(() => setError('Failed to load initial data'))
-  }, [])
+    // All roles need terms; admin/teacher also need classes
+    const promises: Promise<any>[] = [api.get('/api/terms')]
+    if (isAdminOrTeacher) promises.push(api.get('/api/classes'))
 
-  // Fee structure
+    Promise.all(promises)
+      .then(([t, c]) => {
+        const termList  = t.data?.value ?? t.data ?? []
+        setTerms(termList)
+        if (termList[0]) setSelectedTerm(termList[0].id)
+
+        if (isAdminOrTeacher) {
+          const classList = c?.data?.value ?? c?.data ?? []
+          setClasses(classList)
+          if (classList[0]) setSelectedClass(classList[0].id)
+        }
+      })
+      .catch(() => setError('Failed to load terms and classes'))
+
+    // Load the appropriate student list
+    if (isParent) {
+      api.get('/api/users/my-children')
+        .then(res => {
+          const list: Child[] = res.data?.value ?? res.data ?? []
+          setChildren(list)
+          if (list[0]) setSelectedStudent(list[0].student_id)
+        })
+        .catch(() => setError('Failed to load your children'))
+    } else if (isStudent) {
+      // Get own student ID (reuse existing logic)
+      api.get('/api/students/me')
+        .then(res => {
+          const me = res.data?.value ?? res.data
+          if (me?.id) setSelectedStudent(me.id)
+          else setError('Student profile not found. Contact admin.')
+        })
+        .catch(() => setError('Failed to load your profile'))
+    } else if (isAdminOrTeacher) {
+      api.get('/api/students')
+        .then(res => {
+          const list = res.data?.value ?? res.data ?? []
+          setStudents(list)
+          if (list[0]) setSelectedStudent(list[0].id)
+        })
+        .catch(() => {})
+    }
+  }, [role])
+
+  // ── Fee structure (admin/teacher only) ────────────────────────────────────
   useEffect(() => {
-    if (!selectedTerm || !selectedClass || tab !== 'structure') return
+    if (!selectedTerm || !selectedClass || tab !== 'structure' || !isAdminOrTeacher) return
     setLoadingStructure(true)
     setStructure(null)
     api.get('/api/fees/structure', {
@@ -140,35 +177,68 @@ export default function FeesPage() {
       .then(res => setStructure(res.data))
       .catch(() => setError('Failed to load fee structure'))
       .finally(() => setLoadingStructure(false))
-  }, [selectedTerm, selectedClass, tab])
+  }, [selectedTerm, selectedClass, tab, isAdminOrTeacher])
 
-  // Student balance
+  // ── Student balance ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedTerm || !selectedStudent || tab !== 'balance') return
     setLoadingBalance(true)
     setBalance(null)
-    api.get('/api/fees/student-balance', {
-      params: { student_id: selectedStudent, term_id: selectedTerm }
-    })
-      .then(res => setBalance(res.data))
-      .catch(() => setError('Failed to load student balance'))
-      .finally(() => setLoadingBalance(false))
-  }, [selectedTerm, selectedStudent, tab])
+    setError(null)
 
-  // Payment history
+    let url: string
+    const params: any = { term_id: selectedTerm }
+
+    if (isStudent) {
+      url = '/api/fees/my-balance'   // student's own balance
+    } else if (isParent) {
+      url = '/api/fees/my-balance'
+      params.student_id = selectedStudent
+    } else {
+      url = '/api/fees/student-balance'
+      params.student_id = selectedStudent
+    }
+
+    api.get(url, { params })
+      .then(res => setBalance(res.data))
+      .catch(e => {
+        const msg = e?.response?.data?.error ?? ''
+        if (msg.toLowerCase().includes('enrollment')) {
+          setError('No active class enrollment found. Contact admin to assign a class.')
+        } else {
+          setError(msg || 'Failed to load balance')
+        }
+      })
+      .finally(() => setLoadingBalance(false))
+  }, [selectedTerm, selectedStudent, tab, role])
+
+  // ── Payment history ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedStudent || tab !== 'history') return
     setLoadingPayments(true)
     setPayments([])
-    api.get('/api/payments/history', {
-      params: { student_id: selectedStudent, term_id: selectedTerm || undefined }
-    })
+
+    let url: string
+    const params: any = {}
+
+    if (isStudent) {
+      url = '/api/payments/my-history'
+    } else if (isParent) {
+      url = '/api/payments/my-history'
+      params.student_id = selectedStudent
+    } else {
+      url = '/api/payments/history'
+      params.student_id = selectedStudent
+    }
+    if (selectedTerm) params.term_id = selectedTerm
+
+    api.get(url, { params })
       .then(res => setPayments(res.data?.value ?? res.data ?? []))
       .catch(() => setError('Failed to load payment history'))
       .finally(() => setLoadingPayments(false))
-  }, [selectedStudent, selectedTerm, tab])
+  }, [selectedStudent, selectedTerm, tab, role])
 
-  // Initiate payment
+  // ── Initiate payment ───────────────────────────────────────────────────────
   async function initiatePayment(amount?: number) {
     if (!selectedStudent || !selectedTerm) return
     setLoadingInitiate(true)
@@ -182,26 +252,60 @@ export default function FeesPage() {
       else setError('No payment URL returned')
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Failed to initiate payment')
-    } finally {
-      setLoadingInitiate(false)
-    }
+    } finally { setLoadingInitiate(false) }
   }
 
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'structure', label: 'Fee Structure' },
-    { key: 'balance',   label: 'Student Balance' },
-    { key: 'history',   label: 'Payment History' },
-  ]
 
-  const studentName = (id: string) =>
-    students.find(s => s.id === id)?.users?.full_name ?? '—'
+
+  async function downloadReceipt(paymentId: string) {
+  try {
+    const res = await api.get(`/api/payments/receipt/${paymentId}`, {
+      responseType: 'blob',        // treat the response as a binary file
+    })
+    const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `receipt-${paymentId}.pdf`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  } catch (e: any) {
+    toast.error('Failed to download receipt')
+  }
+}
+  // ── UI Helpers ─────────────────────────────────────────────────────────────
+  const studentName = (id: string) => {
+    if (isParent) {
+      const child = children.find(c => c.student_id === id)
+      return child?.students?.users?.full_name ?? 'Child'
+    }
+    const s = students.find(s => s.id === id)
+    return s?.users?.full_name ?? 'Student'
+  }
+
+  // Determine which tabs to show
+  const TABS: { key: Tab; label: string }[] = isAdminOrTeacher
+    ? [
+        { key: 'structure', label: 'Fee Structure' },
+        { key: 'balance',   label: 'Student Balance' },
+        { key: 'history',   label: 'Payment History' },
+      ]
+    : (isParent || isStudent)
+      ? [
+          { key: 'balance', label: isParent ? 'Balance' : 'My Balance' },
+          { key: 'history', label: 'Payment History' },
+        ]
+      : []
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Fees & Payments</h1>
-        <p className="text-sm text-gray-500">Fee structures, student balances, and payment history</p>
+        <p className="text-sm text-gray-500">
+          {isStudent ? 'View your fee balance and payment history' :
+           isParent  ? 'View your child\'s fees and make payments' :
+           'Fee structures, student balances, and payment history'}
+        </p>
       </div>
 
       {error && (
@@ -211,7 +315,7 @@ export default function FeesPage() {
         </div>
       )}
 
-      {/* Global filters */}
+      {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <select
           className="border rounded-lg px-3 py-2 text-sm bg-white"
@@ -224,7 +328,7 @@ export default function FeesPage() {
           ))}
         </select>
 
-        {tab === 'structure' && (
+        {tab === 'structure' && isAdminOrTeacher && (
           <select
             className="border rounded-lg px-3 py-2 text-sm bg-white"
             value={selectedClass}
@@ -237,15 +341,19 @@ export default function FeesPage() {
           </select>
         )}
 
-        {(tab === 'balance' || tab === 'history') && (
+        {/* Student / Child selector for non-student views */}
+        {!isStudent && (tab === 'balance' || tab === 'history') && (
           <select
             className="border rounded-lg px-3 py-2 text-sm bg-white"
             value={selectedStudent}
             onChange={e => setSelectedStudent(e.target.value)}
           >
-            <option value="">— Select Student —</option>
-            {students.map(s => (
-              <option key={s.id} value={s.id}>{s.users?.full_name}</option>
+            <option value="">— {isParent ? 'Select Child' : 'Select Student'} —</option>
+            {(isParent ? children : students).map(item => (
+              <option key={isParent ? item.student_id : item.id}
+                      value={isParent ? item.student_id : item.id}>
+                {isParent ? item.students?.users?.full_name : item.users?.full_name}
+              </option>
             ))}
           </select>
         )}
@@ -268,8 +376,8 @@ export default function FeesPage() {
         ))}
       </div>
 
-      {/* ── Tab: Fee Structure ── */}
-      {tab === 'structure' && (
+      {/* ── Fee Structure (admin/teacher) ── */}
+      {tab === 'structure' && isAdminOrTeacher && (
         <div className="space-y-4">
           {loadingStructure ? (
             <div className="space-y-2 animate-pulse">
@@ -279,19 +387,16 @@ export default function FeesPage() {
             </div>
           ) : structure ? (
             <>
-              {/* Summary */}
               <div className="grid grid-cols-4 gap-3">
-  <StatCard label="Tuition"   value={fmt(structure.tuition)} />
-  <StatCard label="Admission" value={fmt(structure.admission)} />
-  <StatCard label="Other"     value={fmt(structure.other)} />
-  <StatCard label="Extra"     value={fmt(structure.extra)} />
-</div>
-<div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 flex justify-between items-center">
-  <span className="text-sm font-medium text-violet-700">Grand Total</span>
-  <span className="text-xl font-bold text-violet-700">{fmt(structure.total)}</span>
-</div>
-
-              {/* Items table */}
+                <StatCard label="Tuition"   value={fmt(structure.tuition)} />
+                <StatCard label="Admission" value={fmt(structure.admission)} />
+                <StatCard label="Other"     value={fmt(structure.other)} />
+                <StatCard label="Extra"     value={fmt(structure.extra)} />
+              </div>
+              <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 flex justify-between items-center">
+                <span className="text-sm font-medium text-violet-700">Grand Total</span>
+                <span className="text-xl font-bold text-violet-700">{fmt(structure.total)}</span>
+              </div>
               <div className="bg-white border rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b text-sm font-medium text-gray-700">
                   Fee Items ({structure.items.length})
@@ -309,27 +414,16 @@ export default function FeesPage() {
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium text-gray-900">{item.item_name}</td>
                         <td className="px-4 py-3">
-                          <Badge
-                            label={item.category}
-                            color={CATEGORY_COLORS[item.category] ?? 'bg-gray-100 text-gray-600'}
-                          />
+                          <Badge label={item.category} color={CATEGORY_COLORS[item.category] ?? 'bg-gray-100 text-gray-600'} />
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-gray-700">
-                          {fmt(item.amount)}
-                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-gray-700">{fmt(item.amount)}</td>
                       </tr>
                     ))}
                   </tbody>
-                  
-                  {/* ⚡ The Corrected Footer */}
-                  <tfoot className="bg-gray-50 border-t font-semibold">
+                  <tfoot className="bg-gray-50 border-t">
                     <tr>
-                      <td colSpan={2} className="px-4 py-3 text-right text-gray-500">
-                        Grand Total:
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold font-mono text-gray-900">
-                        {fmt(structure.total)}
-                      </td>
+                      <td colSpan={2} className="px-4 py-3 font-semibold text-gray-700 text-right">Total</td>
+                      <td className="px-4 py-3 text-right font-bold font-mono text-gray-900">{fmt(structure.total)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -343,7 +437,7 @@ export default function FeesPage() {
         </div>
       )}
 
-      {/* ── Tab: Student Balance ── */}
+      {/* ── Student Balance (student / parent / admin) ── */}
       {tab === 'balance' && (
         <div className="space-y-4">
           {loadingBalance ? (
@@ -365,7 +459,6 @@ export default function FeesPage() {
                 />
               </div>
 
-              {/* Discount info */}
               {balance.discount && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm">
                   <span className="font-medium text-amber-700">Discount applied: </span>
@@ -378,12 +471,14 @@ export default function FeesPage() {
                 </div>
               )}
 
-              {/* Payment CTA */}
               {balance.balance > 0 && (
                 <div className="bg-white border rounded-xl p-4 space-y-3">
                   <div className="font-medium text-gray-700">Make a Payment</div>
                   <div className="text-sm text-gray-500">
-                    Outstanding balance for <strong>{studentName(selectedStudent)}</strong>:{' '}
+                    {isParent && selectedStudent && (
+                      <span>For {studentName(selectedStudent)} — </span>
+                    )}
+                    Outstanding balance:{' '}
                     <strong className="text-red-600">{fmt(balance.balance)}</strong>
                   </div>
                   <div className="flex gap-3 flex-wrap">
@@ -392,11 +487,11 @@ export default function FeesPage() {
                       disabled={loadingInitiate}
                       className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors"
                     >
-                      {loadingInitiate ? 'Redirecting…' : `Pay Full Balance — ${fmt(balance.balance)}`}
+                      {loadingInitiate ? 'Redirecting…' : `Pay Full — ${fmt(balance.balance)}`}
                     </button>
                     <button
                       onClick={() => {
-                        const amt = prompt('Enter amount to pay (in Naira, numbers only):')
+                        const amt = prompt('Enter amount (numbers only):')
                         if (amt && !isNaN(Number(amt))) initiatePayment(Number(amt))
                       }}
                       disabled={loadingInitiate}
@@ -416,13 +511,15 @@ export default function FeesPage() {
             </>
           ) : (
             <div className="text-sm text-gray-400 text-center py-10">
-              Select a student and term to view balance
+              {(isStudent || isParent)
+                ? 'Loading your balance…'
+                : 'Select a student and term to view balance'}
             </div>
           )}
         </div>
       )}
 
-      {/* ── Tab: Payment History ── */}
+      {/* ── Payment History ── */}
       {tab === 'history' && (
         <div className="bg-white border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b text-sm text-gray-500">
@@ -432,7 +529,7 @@ export default function FeesPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
                 <tr>
-                  <th className="px-4 py-3">Student</th>
+                  {isAdminOrTeacher && <th className="px-4 py-3">Student</th>}
                   <th className="px-4 py-3">Reference</th>
                   <th className="px-4 py-3">Amount</th>
                   <th className="px-4 py-3">Channel</th>
@@ -445,7 +542,7 @@ export default function FeesPage() {
                 {loadingPayments ? (
                   Array.from({ length: 3 }).map((_, i) => (
                     <tr key={i} className="animate-pulse">
-                      {Array.from({ length: 7 }).map((_, j) => (
+                      {Array.from({ length: isAdminOrTeacher ? 7 : 6 }).map((_, j) => (
                         <td key={j} className="px-4 py-3">
                           <div className="h-4 bg-gray-200 rounded w-20" />
                         </td>
@@ -454,24 +551,23 @@ export default function FeesPage() {
                   ))
                 ) : payments.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-gray-400">
+                    <td colSpan={isAdminOrTeacher ? 7 : 6} className="px-4 py-10 text-center text-gray-400">
                       No payments found
                     </td>
                   </tr>
                 ) : (
                   payments.map(p => (
                     <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        {p.students?.users?.full_name ?? '—'}
-                      </td>
+                      {isAdminOrTeacher && (
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          {p.students?.users?.full_name ?? studentName(selectedStudent)}
+                        </td>
+                      )}
                       <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.reference}</td>
                       <td className="px-4 py-3 font-semibold text-gray-900">{fmt(p.amount)}</td>
                       <td className="px-4 py-3 capitalize text-gray-600">{p.channel ?? '—'}</td>
                       <td className="px-4 py-3">
-                        <Badge
-                          label={p.status}
-                          color={STATUS_COLORS[p.status] ?? 'bg-gray-100 text-gray-600'}
-                        />
+                        <Badge label={p.status} color={STATUS_COLORS[p.status] ?? 'bg-gray-100 text-gray-600'} />
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         {p.paid_at
@@ -481,20 +577,17 @@ export default function FeesPage() {
                           : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <a
-                          href={`https://school-api-e09o.onrender.com/api/payments/receipt/${p.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-violet-600 hover:underline"
-                        >
-                          Download
-                        </a>
+                        <button
+  onClick={() => downloadReceipt(p.id)}
+  className="text-xs text-violet-600 hover:underline"
+>
+  Download
+</button>
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
-
             </table>
           </div>
         </div>

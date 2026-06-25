@@ -5,8 +5,8 @@ import { useAuth } from '../hooks/useAuth'
 
 const ROLE_ROUTES: Record<string, string> = {
   admin: '/admin',
-  teacher: '/teacher',
-  student: '/student',
+  teacher: '/dashboard',
+  student: '/dashboard',
   parent: '/parent',
 }
 

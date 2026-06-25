@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import AppShell from '../AppShell'
 import LoginPage from '../pages/LoginPage'
+import RegisterPage from '../pages/RegisterPage'
 import ProtectedRoute from '../components/ProtectedRoute'
 import DashboardPage from '../pages/DashboardPage'
 import StudentsPage from '../pages/StudentsPage'
@@ -15,22 +16,21 @@ import ChatPage from '../pages/ChatPage'
 import QuizzesPage from '../pages/QuizzesPage'
 import AttendancePage from '../pages/AttendancePage'
 import EnterMarksPage from '../pages/EnterMarksPage'
-import RegisterPage   from '../pages/RegisterPage'
-
-function TeacherDashboardPlaceholder() {
-  return <DashboardPage />
-}
-function StudentDashboardPlaceholder() {
-  return <StudentsPage />
-}
-function ParentDashboardPlaceholder() {
-  return <StudentsPage />
-}
+import TeacherCommentsPage from '../pages/TeacherCommentsPage'
+import ParentDashboard from '../pages/ParentDashboard'
+import StudentProfileEditor from '../pages/StudentProfileEditor'
+import CreateUserPage from '../pages/CreateUserPage'
 
 export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
+
+        {/* ── Public routes ── */}
+        <Route path="/login"    element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
+        {/* ── Protected routes inside AppShell ── */}
         <Route
           path="/"
           element={
@@ -39,54 +39,72 @@ export function AppRouter() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<DashboardPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="students" element={<StudentsPage />} />
-          <Route path="students/:id" element={<StudentDetailPage />} />
-          <Route path="visitors" element={<VisitorsPage />} />
-          <Route path="capture" element={<CapturePage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="results" element={<ResultsPage />} />
-          <Route path="fees" element={<FeesPage />} />
-          <Route path="chat" element={<ChatPage />} />
-          <Route path="quizzes" element={<QuizzesPage />} />
-          <Route path="attendance" element={<AttendancePage />} />
-          <Route path="enter-marks"  element={<EnterMarksPage />} />
-          <Route
-            path="admin"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <AdminPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="teacher"
-            element={
-              <ProtectedRoute roles={['teacher']}>
-                <TeacherDashboardPlaceholder />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="student"
-            element={
-              <ProtectedRoute roles={['student']}>
-                <StudentDashboardPlaceholder />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="parent"
-            element={
-              <ProtectedRoute roles={['parent']}>
-                <ParentDashboardPlaceholder />
-              </ProtectedRoute>
-            }
-          />
-        </Route>
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/login" element={<LoginPage />} />
+          {/* Common */}
+          <Route index                element={<DashboardPage />} />
+          <Route path="dashboard"     element={<DashboardPage />} />
+          <Route path="settings"      element={<SettingsPage />} />
+          <Route path="results"       element={<ResultsPage />} />
+          <Route path="chat"          element={<ChatPage />} />
+          <Route path="quizzes"       element={<QuizzesPage />} />
+          <Route path="visitors"      element={<VisitorsPage />} />
+          <Route path="capture"       element={<CapturePage />} />
+
+          {/* Parent only */}
+          <Route path="parent" element={
+            <ProtectedRoute roles={['parent']}>
+              <ParentDashboard />
+            </ProtectedRoute>
+          } />
+
+          {/* Admin + Teacher */}
+          <Route path="students" element={
+            <ProtectedRoute roles={['admin','teacher']}>
+              <StudentsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="students/:id" element={
+            <ProtectedRoute roles={['admin','teacher']}>
+              <StudentDetailPage />
+            </ProtectedRoute>
+          } />
+          <Route path="attendance" element={
+            <ProtectedRoute roles={['admin','teacher']}>
+              <AttendancePage />
+            </ProtectedRoute>
+          } />
+          <Route path="enter-marks" element={
+            <ProtectedRoute roles={['admin','teacher']}>
+              <EnterMarksPage />
+            </ProtectedRoute>
+          } />
+          <Route path="comments" element={
+            <ProtectedRoute roles={['admin','teacher']}>
+              <TeacherCommentsPage />
+            </ProtectedRoute>
+          } />
+
+          {/* Admin only */}
+          <Route path="admin" element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminPage />
+            </ProtectedRoute>
+          } />
+          <Route path="student-profiles" element={
+            <ProtectedRoute roles={['admin']}>
+              <StudentProfileEditor />
+            </ProtectedRoute>
+          } />
+          <Route path="create-user" element={
+            <ProtectedRoute roles={['admin']}>
+              <CreateUserPage />
+            </ProtectedRoute>
+          } />
+<Route path="fees" element={
+  <ProtectedRoute roles={['admin', 'parent']}>
+    <FeesPage />
+  </ProtectedRoute>
+} />
+</Route>
       </Routes>
     </BrowserRouter>
   )

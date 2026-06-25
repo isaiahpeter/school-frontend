@@ -32,8 +32,8 @@ interface GradeScale {
   id: number; min_percent: number; max_percent: number; grade: string; grade_point: number; remark: string
 }
 
-type Tab = 'overview' | 'schools' | 'terms' | 'classes' | 'teachers' | 'subjects' | 'enrollments' | 'grading'
 
+type Tab = 'overview' | 'schools' | 'terms' | 'classes' | 'teachers' | 'subjects' | 'enrollments' | 'grading' | 'discounts' | 'fees' | 'users'
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
@@ -99,7 +99,8 @@ function StatCard({ label, value, color = 'violet' }: { label: string; value: nu
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('overview')
-
+  const [showClassModal, setShowClassModal] = useState(false)
+  const [classForm, setClassForm] = useState({ name: '', section: '', academic_year: '' })
   const [schools,     setSchools]     = useState<School[]>([])
   const [terms,       setTerms]       = useState<Term[]>([])
   const [classes,     setClasses]     = useState<Class[]>([])
@@ -122,6 +123,44 @@ export default function AdminPage() {
   const [subjectForm, setSubjectForm] = useState({ name: '', code: '', description: '' })
   const [saving, setSaving] = useState(false)
 
+  // Discounts
+  const [showDiscountModal, setShowDiscountModal] = useState(false)
+  const [discountStudentId, setDiscountStudentId] = useState('')
+  const [discountTermId,    setDiscountTermId]    = useState('')
+  const [discountType,      setDiscountType]      = useState<'fixed'|'percentage'>('fixed')
+  const [discountValue,     setDiscountValue]     = useState('')
+  const [discountReason,    setDiscountReason]    = useState('')
+  const [discountData,      setDiscountData]      = useState<any>(null)
+  const [loadingDiscount,   setLoadingDiscount]   = useState(false)
+
+  // Fee items
+  const [feeClass,  setFeeClass]  = useState('')
+  const [feeTerm,   setFeeTerm]   = useState('')
+  const [feeItems,  setFeeItems]  = useState([
+    { item_name: '', amount: '', category: 'tuition' as 'tuition'|'admission'|'other'|'extra' }
+  ])
+
+  // Users
+  const [userIdInput,    setUserIdInput]    = useState('')
+  const [newPassword,    setNewPassword]    = useState('')
+  const [newRole,        setNewRole]        = useState('student')
+  const [userActionTab,  setUserActionTab]  = useState<'password'|'role'|'delete'>('password')
+// Add to AdminPage state
+const [linkParentForm, setLinkParentForm] = useState({ parent_user_id: '', student_id: '' })
+
+// Add link parent function
+async function linkParent() {
+  if (!linkParentForm.parent_user_id || !linkParentForm.student_id)
+    return toast.error('Enter both parent user ID and student ID')
+  setSaving(true)
+  try {
+    await api.post('/api/users/link-parent', linkParentForm)
+    toast.success('Parent linked to student successfully')
+    setLinkParentForm({ parent_user_id: '', student_id: '' })
+  } catch (e: any) {
+    toast.error(e?.response?.data?.message ?? 'Failed to link parent')
+  } finally { setSaving(false) }
+}
   // Load all data on mount
   useEffect(() => {
     const load = async () => {
@@ -210,6 +249,108 @@ export default function AdminPage() {
       toast.error(e?.response?.data?.message ?? e?.response?.data?.error ?? 'Failed to create subject')
     } finally { setSaving(false) }
   }
+  async function fetchDiscount() {
+    if (!discountStudentId || !discountTermId) return
+    setLoadingDiscount(true)
+    try {
+      const res = await api.get('/api/discounts', {
+        params: { student_id: discountStudentId, term_id: discountTermId }
+      })
+      setDiscountData(res.data)
+    } catch { setDiscountData(null) }
+    finally { setLoadingDiscount(false) }
+  }
+
+  async function saveDiscount() {
+    if (!discountStudentId || !discountTermId || !discountValue)
+      return toast.error('Fill all required fields')
+    setSaving(true)
+    try {
+      await api.post('/api/discounts', {
+        student_id:     discountStudentId,
+        term_id:        discountTermId,
+        discount_type:  discountType,
+        discount_value: Number(discountValue),
+        reason:         discountReason || undefined,
+      })
+      toast.success('Discount saved')
+      await fetchDiscount()
+      setShowDiscountModal(false)
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to save discount')
+    } finally { setSaving(false) }
+  }
+
+  async function deleteDiscount() {
+    if (!discountData?.id) return
+    if (!confirm('Remove this discount?')) return
+    try {
+      await api.delete(`/api/discounts/${discountData.id}`)
+      toast.success('Discount removed')
+      setDiscountData(null)
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to remove discount')
+    }
+  }
+
+  async function saveFeeItems() {
+    if (!feeClass || !feeTerm) return toast.error('Select class and term')
+    const filled = feeItems.filter(i => i.item_name.trim() && i.amount)
+    if (filled.length === 0) return toast.error('Add at least one fee item')
+    setSaving(true)
+    try {
+      await api.post('/api/fees/items', {
+        class_id: feeClass,
+        term_id:  feeTerm,
+        items: filled.map(i => ({
+          item_name: i.item_name.trim(),
+          amount:    Number(i.amount),
+          category:  i.category,
+        })),
+      })
+      toast.success('Fee items saved')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to save fee items')
+    } finally { setSaving(false) }
+  }
+
+  async function changePassword() {
+    if (!userIdInput.trim() || !newPassword.trim())
+      return toast.error('Enter user ID and new password')
+    if (newPassword.length < 6) return toast.error('Password must be at least 6 characters')
+    setSaving(true)
+    try {
+      await api.put(`/api/users/${userIdInput.trim()}/password`, { newPassword })
+      toast.success('Password updated')
+      setNewPassword('')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to update password')
+    } finally { setSaving(false) }
+  }
+
+  async function changeRole() {
+    if (!userIdInput.trim()) return toast.error('Enter user ID')
+    setSaving(true)
+    try {
+      await api.put(`/api/users/${userIdInput.trim()}/role`, { role: newRole })
+      toast.success('Role updated')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to update role')
+    } finally { setSaving(false) }
+  }
+
+  async function deleteUser() {
+    if (!userIdInput.trim()) return toast.error('Enter user ID')
+    if (!confirm('Delete this user? This cannot be undone.')) return
+    setSaving(true)
+    try {
+      await api.delete(`/api/users/${userIdInput.trim()}`)
+      toast.success('User deleted')
+      setUserIdInput('')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to delete user')
+    } finally { setSaving(false) }
+  }
 
   // ── Create enrollment ──
   async function createEnrollment() {
@@ -228,6 +369,29 @@ export default function AdminPage() {
     } finally { setSaving(false) }
   }
 
+async function createClass() {
+  if (!classForm.name.trim() || !classForm.section.trim() || !classForm.academic_year.trim())
+    return toast.error('Name, section and academic year are required')
+  const school_id = schools[0]?.id
+  if (!school_id) return toast.error('No school found')
+  setSaving(true)
+  try {
+    await api.post('/api/classes', {
+      name:          classForm.name.trim().toUpperCase(),
+      section:       classForm.section.trim().toUpperCase(),
+      academic_year: classForm.academic_year.trim(),
+      school_id,
+    })
+    toast.success('Class created')
+    const res = await api.get('/api/classes')
+    setClasses(res.data?.value ?? res.data ?? [])
+    setShowClassModal(false)
+    setClassForm({ name: '', section: '', academic_year: '' })
+  } catch (e: any) {
+    toast.error(e?.response?.data?.message ?? 'Failed to create class')
+  } finally { setSaving(false) }
+}
+
   const TABS: { key: Tab; label: string }[] = [
     { key: 'overview',     label: 'Overview' },
     { key: 'schools',      label: 'Schools' },
@@ -237,6 +401,9 @@ export default function AdminPage() {
     { key: 'subjects',     label: 'Subjects' },
     { key: 'enrollments',  label: 'Enrollments' },
     { key: 'grading',      label: 'Grading Scale' },
+    { key: 'discounts',    label: 'Discounts' },
+    { key: 'fees',         label: 'Set Fees' },
+    { key: 'users',        label: 'Users' },
   ]
 
   return (
@@ -391,30 +558,54 @@ export default function AdminPage() {
 
       {/* ── Classes ── */}
       {tab === 'classes' && (
-        <>
-          <SectionHeader title="Classes" />
-          <div className="bg-white border rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Section</th>
-                  <th className="px-4 py-3">Academic Year</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {classes.map(c => (
-                  <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{c.name}</td>
-                    <td className="px-4 py-3 text-gray-600">{c.section}</td>
-                    <td className="px-4 py-3 text-gray-600">{c.academic_year}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+  <>
+    <SectionHeader title="Classes" action={<AddButton onClick={() => setShowClassModal(true)} />} />
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
+          <tr>
+            <th className="px-4 py-3">Name</th>
+            <th className="px-4 py-3">Section</th>
+            <th className="px-4 py-3">Academic Year</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {classes.map(c => (
+            <tr key={c.id} className="hover:bg-gray-50">
+              <td className="px-4 py-3 font-medium">{c.name}</td>
+              <td className="px-4 py-3 text-gray-600">{c.section}</td>
+              <td className="px-4 py-3 text-gray-600">{c.academic_year}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    {showClassModal && (
+      <Modal title="Create Class" onClose={() => setShowClassModal(false)}>
+        <Field label="Class Name *">
+          <input className={input} placeholder="e.g. GRADE FIVE"
+            value={classForm.name}
+            onChange={e => setClassForm(f => ({ ...f, name: e.target.value }))} />
+        </Field>
+        <Field label="Section *">
+          <input className={input} placeholder="e.g. A"
+            value={classForm.section}
+            onChange={e => setClassForm(f => ({ ...f, section: e.target.value }))} />
+        </Field>
+        <Field label="Academic Year *">
+          <input className={input} placeholder="e.g. 2025/26"
+            value={classForm.academic_year}
+            onChange={e => setClassForm(f => ({ ...f, academic_year: e.target.value }))} />
+        </Field>
+        <button onClick={createClass} disabled={saving}
+          className="w-full mt-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+          {saving ? 'Creating…' : 'Create Class'}
+        </button>
+      </Modal>
+    )}
+  </>
+)}
 
       {/* ── Teachers ── */}
       {tab === 'teachers' && (
@@ -604,6 +795,263 @@ export default function AdminPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </>
+      )}
+
+      {/* ── Discounts ── */}
+      {tab === 'discounts' && (
+        <>
+          <SectionHeader title="Fee Discounts" action={<AddButton onClick={() => setShowDiscountModal(true)} label="+ Set Discount" />} />
+
+          {/* Lookup form */}
+          <div className="bg-white border rounded-xl p-4 space-y-3">
+            <div className="text-sm font-medium text-gray-700">Look up existing discount</div>
+            <div className="flex flex-wrap gap-3">
+              <select className={input} value={discountStudentId} onChange={e => setDiscountStudentId(e.target.value)}>
+                <option value="">— Select Student —</option>
+                {students.map(s => <option key={s.id} value={s.id}>{s.users?.full_name}</option>)}
+              </select>
+              <select className={input} value={discountTermId} onChange={e => setDiscountTermId(e.target.value)}>
+                <option value="">— Select Term —</option>
+                {terms.map(t => <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>)}
+              </select>
+              <button onClick={fetchDiscount} disabled={loadingDiscount}
+                className="px-4 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 disabled:opacity-60 transition-colors">
+                {loadingDiscount ? 'Loading…' : 'Fetch'}
+              </button>
+            </div>
+
+            {discountData && (
+              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-amber-800">
+                    {discountData.discount_type === 'percentage'
+                      ? `${discountData.discount_value}% discount`
+                      : `₦${Number(discountData.discount_value).toLocaleString()} discount`}
+                  </div>
+                  {discountData.reason && (
+                    <div className="text-sm text-amber-600 mt-0.5">{discountData.reason}</div>
+                  )}
+                </div>
+                <button onClick={deleteDiscount}
+                  className="text-sm text-red-600 hover:text-red-800 font-medium border border-red-200 px-3 py-1 rounded-lg hover:bg-red-50 transition-colors">
+                  Remove
+                </button>
+              </div>
+            )}
+            {discountData === null && discountStudentId && discountTermId && !loadingDiscount && (
+              <div className="text-sm text-gray-400 mt-2">No discount found for this student/term</div>
+            )}
+          </div>
+
+          {showDiscountModal && (
+            <Modal title="Set Discount" onClose={() => setShowDiscountModal(false)}>
+              <Field label="Student *">
+                <select className={input} value={discountStudentId} onChange={e => setDiscountStudentId(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {students.map(s => <option key={s.id} value={s.id}>{s.users?.full_name}</option>)}
+                </select>
+              </Field>
+              <Field label="Term *">
+                <select className={input} value={discountTermId} onChange={e => setDiscountTermId(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {terms.map(t => <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>)}
+                </select>
+              </Field>
+              <Field label="Discount Type *">
+                <select className={input} value={discountType} onChange={e => setDiscountType(e.target.value as any)}>
+                  <option value="fixed">Fixed Amount (₦)</option>
+                  <option value="percentage">Percentage (%)</option>
+                </select>
+              </Field>
+              <Field label={`Value ${discountType === 'percentage' ? '(%)' : '(₦)'} *`}>
+                <input className={input} type="number" min={0} value={discountValue}
+                  onChange={e => setDiscountValue(e.target.value)} />
+              </Field>
+              <Field label="Reason">
+                <input className={input} placeholder="e.g. Sibling discount" value={discountReason}
+                  onChange={e => setDiscountReason(e.target.value)} />
+              </Field>
+              <button onClick={saveDiscount} disabled={saving}
+                className="w-full mt-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                {saving ? 'Saving…' : 'Save Discount'}
+              </button>
+            </Modal>
+          )}
+        </>
+      )}
+
+      {/* ── Set Fees ── */}
+      {tab === 'fees' && (
+        <>
+          <SectionHeader title="Set Fee Items" />
+          <div className="bg-white border rounded-xl p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Class *</label>
+                <select className={input} value={feeClass} onChange={e => setFeeClass(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name} {c.section}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Term *</label>
+                <select className={input} value={feeTerm} onChange={e => setFeeTerm(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {terms.map(t => <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Fee Items</span>
+                <button
+                  onClick={() => setFeeItems(f => [...f, { item_name: '', amount: '', category: 'other' }])}
+                  className="text-xs text-violet-600 hover:text-violet-800 font-medium"
+                >+ Add Row</button>
+              </div>
+
+              <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                <span className="col-span-5">Item Name</span>
+                <span className="col-span-3">Amount (₦)</span>
+                <span className="col-span-3">Category</span>
+                <span className="col-span-1"></span>
+              </div>
+
+              {feeItems.map((item, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                  <input
+                    className={`col-span-5 ${input}`}
+                    placeholder="e.g. Tuition"
+                    value={item.item_name}
+                    onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, item_name: e.target.value } : x))}
+                  />
+                  <input
+                    className={`col-span-3 ${input}`}
+                    type="number" min={0} placeholder="0"
+                    value={item.amount}
+                    onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
+                  />
+                  <select
+                    className={`col-span-3 ${input}`}
+                    value={item.category}
+                    onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, category: e.target.value as any } : x))}
+                  >
+                    <option value="tuition">Tuition</option>
+                    <option value="admission">Admission</option>
+                    <option value="other">Other</option>
+                    <option value="extra">Extra</option>
+                  </select>
+                  {feeItems.length > 1 && (
+                    <button onClick={() => setFeeItems(f => f.filter((_, i) => i !== idx))}
+                      className="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none">✕</button>
+                  )}
+                </div>
+              ))}
+
+              <div className="pt-2 border-t text-sm font-medium text-gray-700 flex justify-between">
+                <span>Total</span>
+                <span>₦{feeItems.reduce((s, i) => s + (Number(i.amount) || 0), 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <button onClick={saveFeeItems} disabled={saving}
+              className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-lg disabled:opacity-60 transition-colors">
+              {saving ? 'Saving…' : 'Save Fee Items'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Users ── */}
+      {tab === 'users' && (
+        <>
+          <SectionHeader title="User Management" />
+          <div className="bg-white border rounded-xl p-5 space-y-4 max-w-lg">
+            {/* Action tabs */}
+            <div className="flex gap-1 border-b">
+              {(['password','role','delete'] as const).map(t => (
+                <button key={t} onClick={() => setUserActionTab(t)}
+                  className={`px-3 py-1.5 text-sm font-medium border-b-2 capitalize transition-colors ${
+                    userActionTab === t
+                      ? 'border-violet-600 text-violet-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-900'
+                  }`}>
+                  {t === 'password' ? '🔑 Password' : t === 'role' ? '👤 Role' : '🗑 Delete'}
+                </button>
+              ))}
+            </div>
+
+            <Field label="User ID *">
+              <input className={input} placeholder="Paste user UUID here"
+                value={userIdInput} onChange={e => setUserIdInput(e.target.value)} />
+              <p className="text-xs text-gray-400 mt-1">Find user IDs in the Teachers or Students tabs</p>
+            </Field>
+
+            {userActionTab === 'password' && (
+              <>
+                <Field label="New Password *">
+                  <input className={input} type="password" placeholder="Min. 6 characters"
+                    value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                </Field>
+                <button onClick={changePassword} disabled={saving}
+                  className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                  {saving ? 'Updating…' : 'Update Password'}
+                </button>
+              </>
+            )}
+             {/* Link Parent */}
+<div className="pt-4 border-t space-y-3">
+  <div className="font-medium text-sm text-gray-700">🔗 Link Parent to Student</div>
+  <Field label="Parent User ID *">
+    <input className={input} placeholder="Parent's user UUID"
+      value={linkParentForm.parent_user_id}
+      onChange={e => setLinkParentForm(f => ({ ...f, parent_user_id: e.target.value }))} />
+  </Field>
+  <Field label="Student ID *">
+    <select className={input} value={linkParentForm.student_id}
+      onChange={e => setLinkParentForm(f => ({ ...f, student_id: e.target.value }))}>
+      <option value="">— Select Student —</option>
+      {students.map(s => (
+        <option key={s.id} value={s.id}>{s.users?.full_name}</option>
+      ))}
+    </select>
+  </Field>
+  <button onClick={linkParent} disabled={saving}
+    className="w-full py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+    {saving ? 'Linking…' : 'Link Parent to Student'}
+  </button>
+</div>
+            {userActionTab === 'role' && (
+              <>
+                <Field label="New Role *">
+                  <select className={input} value={newRole} onChange={e => setNewRole(e.target.value)}>
+                    <option value="admin">Admin</option>
+                    <option value="teacher">Teacher</option>
+                    <option value="student">Student</option>
+                    <option value="parent">Parent</option>
+                  </select>
+                </Field>
+                <button onClick={changeRole} disabled={saving}
+                  className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                  {saving ? 'Updating…' : 'Update Role'}
+                </button>
+              </>
+            )}
+
+            {userActionTab === 'delete' && (
+              <>
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                  ⚠️ This action is permanent and cannot be undone. The last admin cannot be deleted.
+                </div>
+                <button onClick={deleteUser} disabled={saving}
+                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                  {saving ? 'Deleting…' : 'Delete User'}
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
