@@ -193,21 +193,19 @@ export default function QuizzesPage() {
 
 
   async function loadQuizzes() {
-    setLoading(true)
-    try {
-      const res = await api.get('/api/quizzes')
-      const all = res.data?.value ?? res.data ?? []
-      if (role === 'student') {
-        setQuizzes(all.filter((q: Quiz) => q.is_published))
-      } else {
-        setQuizzes(all)
-      }
-    } catch {
-      toast.error('Failed to load quizzes')
-    } finally {
-      setLoading(false)
-    }
+  setLoading(true)
+  try {
+    // Students use the dedicated endpoint (hides taken quizzes + limits to one class)
+    const endpoint = role === 'student' ? '/api/quizzes/student' : '/api/quizzes'
+    const res = await api.get(endpoint)
+    const data = res.data?.value ?? res.data ?? []
+    setQuizzes(Array.isArray(data) ? data : [])
+  } catch {
+    toast.error('Failed to load quizzes')
+  } finally {
+    setLoading(false)
   }
+}
 
   // ── Take quiz ──────────────────────────────────────────────────────────────
 
