@@ -1,4 +1,4 @@
-import  { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 import { useAuth } from '../hooks/useAuth'
@@ -32,40 +32,38 @@ export default function ChatPage() {
   const { user } = useAuth()
   const role = (user as any)?.role ?? 'student'
   const canManage = role === 'admin' || role === 'teacher'
-
-  const [rooms, setRooms] = useState<Room[]>([])
-  const [activeRoom, setActiveRoom] = useState<Room | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [text, setText] = useState('')
-  const [loadingRooms, setLoadingRooms] = useState(true)
-  const [sending, setSending] = useState(false)
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [classes, setClasses] = useState<{ id: string; name: string; section: string }[]>([])
-  const [newRoomClass, setNewRoomClass] = useState('')
-  const [creatingRoom, setCreatingRoom] = useState(false)
-
-  // Block management
-  const [showBlockModal, setShowBlockModal] = useState(false)
-  const [blockedStudents, setBlockedStudents] = useState<BlockedStudent[]>([])
-  const [loadingBlocked, setLoadingBlocked] = useState(false)
-  const [blockStudentId, setBlockStudentId] = useState('')
-  const [blockReason, setBlockReason] = useState('')
-  const [blockExpires, setBlockExpires] = useState('')
-  const [enrolledStudents, setEnrolledStudents] = useState<{ id: string; name: string }[]>([])
-  const [loadingEnrolled, setLoadingEnrolled] = useState(false)
-
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const activeRoomRef = useRef<Room | null>(null)
-
   const currentUserId = (user as any)?.id
 
-  useEffect(() => {
-    activeRoomRef.current = activeRoom
-  }, [activeRoom])
+  const [rooms,          setRooms]          = useState<Room[]>([])
+  const [activeRoom,     setActiveRoom]      = useState<Room | null>(null)
+  const [messages,       setMessages]        = useState<Message[]>([])
+  const [text,           setText]            = useState('')
+  const [loadingRooms,   setLoadingRooms]    = useState(true)
+  const [sending,        setSending]         = useState(false)
+  const [showCreateModal,setShowCreateModal] = useState(false)
+  const [classes,        setClasses]         = useState<{ id: string; name: string; section: string }[]>([])
+  const [newRoomClass,   setNewRoomClass]    = useState('')
+  const [creatingRoom,   setCreatingRoom]    = useState(false)
 
-  // Load rooms and classes
-  // 
+  // Block management
+  const [showBlockModal,    setShowBlockModal]    = useState(false)
+  const [blockedStudents,   setBlockedStudents]   = useState<BlockedStudent[]>([])
+  const [loadingBlocked,    setLoadingBlocked]    = useState(false)
+  const [blockStudentId,    setBlockStudentId]    = useState('')
+  const [blockReason,       setBlockReason]       = useState('')
+  const [blockExpires,      setBlockExpires]      = useState('')
+  const [enrolledStudents,  setEnrolledStudents]  = useState<{ id: string; name: string }[]>([])
+  const [loadingEnrolled,   setLoadingEnrolled]   = useState(false)
+
+  // Mobile: track whether we're viewing room list or messages
+  const [mobileView, setMobileView] = useState<'rooms' | 'messages'>('rooms')
+
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const pollRef        = useRef<ReturnType<typeof setInterval> | null>(null)
+  const activeRoomRef  = useRef<Room | null>(null)
+
+  useEffect(() => { activeRoomRef.current = activeRoom }, [activeRoom])
+
   useEffect(() => {
     api.get('/api/chat/rooms')
       .then(res => setRooms(res.data?.value ?? res.data ?? []))
@@ -82,14 +80,10 @@ export default function ChatPage() {
 
   const loadMessages = useCallback(async (roomId: string) => {
     try {
-      const res = await api.get(`/api/chat/rooms/${roomId}/messages`, {
-        params: { limit: 100 }
-      })
+      const res = await api.get(`/api/chat/rooms/${roomId}/messages`, { params: { limit: 100 } })
       const list: Message[] = res.data?.value ?? res.data ?? []
       setMessages(list.slice().reverse())
-    } catch {
-      // silent
-    }
+    } catch { /* silent */ }
   }, [])
 
   useEffect(() => {
@@ -102,20 +96,24 @@ export default function ChatPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [activeRoom, loadMessages])
 
+  function selectRoom(room: Room) {
+    setMessages([])
+    setActiveRoom(room)
+    setMobileView('messages')
+  }
+
   async function sendMessage() {
     if (!text.trim() || !activeRoom) return
     const draft = text.trim()
     setText('')
-
     const optimistic: Message = {
       id: `temp-${Date.now()}`,
       sender_id: currentUserId ?? '',
       message: draft,
       created_at: new Date().toISOString(),
-      users: { full_name: (user as any)?.full_name ?? 'You' }
+      users: { full_name: (user as any)?.full_name ?? 'You' },
     }
     setMessages(prev => [...prev, optimistic])
-
     setSending(true)
     try {
       await api.post(`/api/chat/rooms/${activeRoom.id}/messages`, { message: draft })
@@ -124,9 +122,7 @@ export default function ChatPage() {
       setMessages(prev => prev.filter(m => m.id !== optimistic.id))
       setText(draft)
       toast.error(e?.response?.data?.message ?? 'Failed to send message')
-    } finally {
-      setSending(false)
-    }
+    } finally { setSending(false) }
   }
 
   async function createRoom() {
@@ -141,12 +137,8 @@ export default function ChatPage() {
       setNewRoomClass('')
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Failed to create room')
-    } finally {
-      setCreatingRoom(false)
-    }
+    } finally { setCreatingRoom(false) }
   }
-
-  // Block management functions
 
   async function openBlockModal(room: Room) {
     if (!canManage) return
@@ -157,46 +149,33 @@ export default function ChatPage() {
     setBlockReason('')
     setBlockExpires('')
     try {
-      // Fetch blocked students
-      const resBlocked = await api.get(`/api/chat/blocked?class_id=${room.class_id}`)
-      setBlockedStudents(resBlocked.data?.value ?? resBlocked.data ?? [])
-    } catch (e) {
-      toast.error('Failed to load blocked students')
-    } finally {
-      setLoadingBlocked(false)
-    }
+      const res = await api.get(`/api/chat/blocked?class_id=${room.class_id}`)
+      setBlockedStudents(res.data?.value ?? res.data ?? [])
+    } catch { toast.error('Failed to load blocked students') }
+    finally { setLoadingBlocked(false) }
 
-    // Fetch enrolled students for blocking (only those not already blocked)
     try {
       setLoadingEnrolled(true)
-      const resEnroll = await api.get(`/api/enrollments?class_id=${room.class_id}`)
-      const enrollments = resEnroll.data?.value ?? resEnroll.data ?? []
-      const studentMap: { id: string; name: string }[] = []
+      const res = await api.get(`/api/enrollments?class_id=${room.class_id}`)
+      const enrollments = res.data?.value ?? res.data ?? []
+      const map: { id: string; name: string }[] = []
       enrollments.forEach((e: any) => {
-        const sid = e.student_id
-        const name = e.students?.users?.full_name || e.student_id
-        if (!studentMap.find(s => s.id === sid)) studentMap.push({ id: sid, name })
+        if (!map.find(s => s.id === e.student_id))
+          map.push({ id: e.student_id, name: e.students?.users?.full_name ?? e.student_id })
       })
-      setEnrolledStudents(studentMap)
-    } catch (e) {
-      setEnrolledStudents([])
-    } finally {
-      setLoadingEnrolled(false)
-    }
+      setEnrolledStudents(map)
+    } catch { setEnrolledStudents([]) }
+    finally { setLoadingEnrolled(false) }
   }
 
   async function addBlock() {
     if (!blockStudentId || !activeRoom) return toast.error('Select a student')
     try {
-      const body: any = {
-        student_id: blockStudentId,
-        class_id: activeRoom.class_id,
-      }
-      if (blockReason) body.reason = blockReason
+      const body: any = { student_id: blockStudentId, class_id: activeRoom.class_id }
+      if (blockReason)  body.reason     = blockReason
       if (blockExpires) body.expires_at = new Date(blockExpires).toISOString()
       await api.post('/api/chat/block', body)
       toast.success('Student blocked')
-      // Refresh list
       const res = await api.get(`/api/chat/blocked?class_id=${activeRoom.class_id}`)
       setBlockedStudents(res.data?.value ?? res.data ?? [])
       setBlockStudentId('')
@@ -212,7 +191,6 @@ export default function ChatPage() {
     try {
       await api.post('/api/chat/unblock', { student_id: studentId, class_id: activeRoom.class_id })
       toast.success('Student unblocked')
-      // Refresh
       const res = await api.get(`/api/chat/blocked?class_id=${activeRoom.class_id}`)
       setBlockedStudents(res.data?.value ?? res.data ?? [])
     } catch (e: any) {
@@ -240,9 +218,151 @@ export default function ChatPage() {
 
   const inp = "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
 
+  // ── Room list panel ────────────────────────────────────────────────────────
+  const RoomList = (
+    <div className="bg-white border rounded-xl overflow-hidden flex flex-col h-full">
+      <div className="px-4 py-3 border-b flex items-center justify-between">
+        <span className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+          Rooms ({rooms.length})
+        </span>
+        {canManage && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="text-xs text-violet-600 font-medium hover:underline"
+          >
+            + New Room
+          </button>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {loadingRooms ? (
+          <div className="p-4 space-y-2 animate-pulse">
+            {[1,2,3].map(i => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
+          </div>
+        ) : rooms.length === 0 ? (
+          <div className="p-4 text-sm text-gray-400 text-center">No rooms yet</div>
+        ) : rooms.map(room => (
+          <button
+            key={room.id}
+            onClick={() => selectRoom(room)}
+            className={`w-full text-left px-4 py-3 border-b hover:bg-gray-50 transition-colors ${
+              activeRoom?.id === room.id ? 'bg-violet-50 border-l-2 border-l-violet-600' : ''
+            }`}
+          >
+            <div className="font-medium text-sm text-gray-900">{room.classes?.name}</div>
+            <div className="text-xs text-gray-500">Section {room.classes?.section}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  // ── Message panel ──────────────────────────────────────────────────────────
+  const MessagePanel = (
+    <div className="bg-white border rounded-xl flex flex-col overflow-hidden h-full">
+      {!activeRoom ? (
+        <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+          Select a room to start chatting
+        </div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="px-4 py-3 border-b flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3">
+              {/* Back button — mobile only */}
+              <button
+                onClick={() => setMobileView('rooms')}
+                className="sm:hidden text-violet-600 font-bold text-lg mr-1"
+              >
+                ←
+              </button>
+              <div className="h-8 w-8 rounded-full bg-violet-100 flex items-center justify-center text-violet-700 font-bold text-sm shrink-0">
+                {activeRoom.classes?.name[0]}
+              </div>
+              <div>
+                <div className="font-medium text-sm">{activeRoom.classes?.name}</div>
+                <div className="text-xs text-gray-500">Section {activeRoom.classes?.section}</div>
+              </div>
+            </div>
+            {canManage && (
+              <button
+                onClick={() => openBlockModal(activeRoom)}
+                className="px-2 py-1 border rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                ⛔ Blocks
+              </button>
+            )}
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+            {grouped.map(({ date, items }, groupIdx) => (
+              <div key={`${date}-${groupIdx}`}>
+                <div className="flex items-center gap-2 my-3">
+                  <div className="flex-1 h-px bg-gray-100" />
+                  <span className="text-xs text-gray-400">{date}</span>
+                  <div className="flex-1 h-px bg-gray-100" />
+                </div>
+                <div className="space-y-2">
+                  {items.map(msg => {
+                    const isMe = msg.sender_id === currentUserId
+                    return (
+                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                          {!isMe && (
+                            <span className="text-xs text-violet-600 font-medium mb-0.5 px-1">
+                              {msg.users?.full_name}
+                            </span>
+                          )}
+                          <div className={`px-3 py-2 rounded-2xl text-sm break-words ${
+                            isMe
+                              ? 'bg-violet-600 text-white rounded-tr-sm'
+                              : 'bg-gray-100 text-gray-900 rounded-tl-sm'
+                          }`}>
+                            {msg.message}
+                          </div>
+                          <span className="text-xs text-gray-400 mt-0.5 px-1">
+                            {formatTime(msg.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="px-4 py-3 border-t flex gap-2 shrink-0">
+            <input
+              className="flex-1 border rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+              placeholder="Type a message…"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+              }}
+              disabled={sending}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={sending || !text.trim()}
+              className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-full disabled:opacity-50 transition-colors"
+            >
+              {sending ? '…' : 'Send'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-[calc(100vh-8rem)]">
+      {/* Desktop header */}
+      <div className="flex items-center justify-between mb-4 shrink-0">
         <div>
           <h1 className="text-2xl font-bold">Chat</h1>
           <p className="text-sm text-gray-500">Class-based messaging</p>
@@ -257,134 +377,17 @@ export default function ChatPage() {
         )}
       </div>
 
-      <div className="flex gap-4 h-[70vh]">
-        {/* Room list */}
-        <div className="w-64 shrink-0 bg-white border rounded-xl overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b text-xs text-gray-500 uppercase tracking-wide font-medium">
-            Rooms ({rooms.length})
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {loadingRooms ? (
-              <div className="p-4 space-y-2 animate-pulse">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="h-12 bg-gray-100 rounded-lg" />
-                ))}
-              </div>
-            ) : rooms.length === 0 ? (
-              <div className="p-4 text-sm text-gray-400 text-center">No rooms yet</div>
-            ) : (
-              rooms.map(room => (
-                <button
-                  key={room.id}
-                  onClick={() => { setMessages([]); setActiveRoom(room) }}
-                  className={`w-full text-left px-4 py-3 border-b hover:bg-gray-50 transition-colors ${
-                    activeRoom?.id === room.id
-                      ? 'bg-violet-50 border-l-2 border-l-violet-600'
-                      : ''
-                  }`}
-                >
-                  <div className="font-medium text-sm text-gray-900">{room.classes?.name}</div>
-                  <div className="text-xs text-gray-500">Section {room.classes?.section}</div>
-                </button>
-              ))
-            )}
-          </div>
+      {/* Layout: desktop = side-by-side, mobile = one panel at a time */}
+      <div className="flex-1 min-h-0">
+        {/* Desktop */}
+        <div className="hidden sm:flex gap-4 h-full">
+          <div className="w-64 shrink-0 h-full">{RoomList}</div>
+          <div className="flex-1 h-full">{MessagePanel}</div>
         </div>
 
-        {/* Message area */}
-        <div className="flex-1 bg-white border rounded-xl flex flex-col overflow-hidden">
-          {!activeRoom ? (
-            <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-              Select a room to start chatting
-            </div>
-          ) : (
-            <>
-              {/* Header */}
-              <div className="px-4 py-3 border-b flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-full bg-violet-100 flex items-center justify-center text-violet-700 font-bold text-sm">
-                    {activeRoom.classes?.name[0]}
-                  </div>
-                  <div>
-                    <div className="font-medium text-sm">{activeRoom.classes?.name}</div>
-                    <div className="text-xs text-gray-500">Section {activeRoom.classes?.section}</div>
-                  </div>
-                </div>
-                {canManage && (
-                  <button
-                    onClick={() => openBlockModal(activeRoom)}
-                    className="px-3 py-1.5 border rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50"
-                  >
-                    ⛔ Manage Blocks
-                  </button>
-                )}
-              </div>
-
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-                {grouped.map(({ date, items }, groupIdx) => (
-                  <div key={`${date}-${groupIdx}`}>
-                    <div className="flex items-center gap-2 my-3">
-                      <div className="flex-1 h-px bg-gray-100" />
-                      <span className="text-xs text-gray-400">{date}</span>
-                      <div className="flex-1 h-px bg-gray-100" />
-                    </div>
-                    <div className="space-y-2">
-                      {items.map(msg => {
-                        const isMe = msg.sender_id === currentUserId
-                        return (
-                          <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-xs lg:max-w-md flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                              {!isMe && (
-                                <span className="text-xs text-violet-600 font-medium mb-0.5 px-1">
-                                  {msg.users?.full_name}
-                                </span>
-                              )}
-                              <div className={`px-3 py-2 rounded-2xl text-sm ${
-                                isMe
-                                  ? 'bg-violet-600 text-white rounded-tr-sm'
-                                  : 'bg-gray-100 text-gray-900 rounded-tl-sm'
-                              }`}>
-                                {msg.message}
-                              </div>
-                              <span className="text-xs text-gray-400 mt-0.5 px-1">
-                                {formatTime(msg.created_at)}
-                              </span>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input */}
-              <div className="px-4 py-3 border-t flex gap-2">
-                <input
-                  className="flex-1 border rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
-                  placeholder="Type a message…"
-                  value={text}
-                  onChange={e => setText(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      sendMessage()
-                    }
-                  }}
-                  disabled={sending}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={sending || !text.trim()}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-full disabled:opacity-50 transition-colors"
-                >
-                  {sending ? '…' : 'Send'}
-                </button>
-              </div>
-            </>
-          )}
+        {/* Mobile */}
+        <div className="sm:hidden h-full">
+          {mobileView === 'rooms' ? RoomList : MessagePanel}
         </div>
       </div>
 
@@ -403,11 +406,8 @@ export default function ChatPage() {
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name} {c.section}</option>)}
               </select>
             </div>
-            <button
-              onClick={createRoom}
-              disabled={creatingRoom}
-              className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors"
-            >
+            <button onClick={createRoom} disabled={creatingRoom}
+              className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
               {creatingRoom ? 'Creating…' : 'Create Room'}
             </button>
           </div>
@@ -417,51 +417,32 @@ export default function ChatPage() {
       {/* Block management modal */}
       {showBlockModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 space-y-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">Manage Blocked Students</h3>
               <button onClick={() => setShowBlockModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
-
-            {/* Add block form */}
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Block a student</label>
-              
-              <select
-  className={inp}
-  value={blockStudentId}
-  onChange={e => setBlockStudentId(e.target.value)}
-  disabled={loadingEnrolled}
->
+              <select className={inp} value={blockStudentId}
+                onChange={e => setBlockStudentId(e.target.value)} disabled={loadingEnrolled}>
                 <option value="">— Select student —</option>
                 {enrolledStudents.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
-              <input
-                className={inp}
-                placeholder="Reason (optional)"
-                value={blockReason}
-                onChange={e => setBlockReason(e.target.value)}
-              />
+              <input className={inp} placeholder="Reason (optional)"
+                value={blockReason} onChange={e => setBlockReason(e.target.value)} />
               <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500">Expires (optional)</label>
-                <input
-                  type="datetime-local"
-                  className="border rounded px-2 py-1 text-xs"
-                  value={blockExpires}
-                  onChange={e => setBlockExpires(e.target.value)}
-                />
+                <label className="text-xs text-gray-500 shrink-0">Expires (optional)</label>
+                <input type="datetime-local" className="border rounded px-2 py-1 text-xs flex-1"
+                  value={blockExpires} onChange={e => setBlockExpires(e.target.value)} />
               </div>
-              <button
-                onClick={addBlock}
-                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg"
-              >
+              <button onClick={addBlock}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg">
                 Block
               </button>
             </div>
-
-            {/* Blocked list */}
             <div>
               <div className="text-sm font-medium text-gray-700 mb-2">
                 Currently Blocked ({blockedStudents.length})
@@ -483,10 +464,8 @@ export default function ChatPage() {
                           </span>
                         )}
                       </div>
-                      <button
-                        onClick={() => unblockStudent(block.student_id)}
-                        className="text-xs text-green-600 hover:underline"
-                      >
+                      <button onClick={() => unblockStudent(block.student_id)}
+                        className="text-xs text-green-600 hover:underline ml-2 shrink-0">
                         Unblock
                       </button>
                     </li>
