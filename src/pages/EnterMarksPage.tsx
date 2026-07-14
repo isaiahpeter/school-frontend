@@ -66,11 +66,18 @@ export default function EnterMarksPage() {
       .finally(() => setLoading(false))
   }, [selectedClass])
 
-  function updateMark(studentId: string, field: 'test_score' | 'exam_score', value: string) {
-    setMarks(prev => prev.map(m =>
-      m.student_id === studentId ? { ...m, [field]: value } : m
-    ))
+function updateMark(studentId: string, field: 'test_score' | 'exam_score', value: string) {
+  // Allow empty string (user clearing the field)
+  if (value === '' || value === '-') {
+    setMarks(prev => prev.map(m => m.student_id === studentId ? { ...m, [field]: '' } : m))
+    return
   }
+  const num = Number(value)
+  const max = field === 'test_score' ? 40 : 60
+  // Clamp to valid range
+  if (num < 0 || num > max) return
+  setMarks(prev => prev.map(m => m.student_id === studentId ? { ...m, [field]: value } : m))
+}
 
   function total(m: MarkEntry) {
     const t = Number(m.test_score) || 0
@@ -198,24 +205,32 @@ export default function EnterMarksPage() {
                           <span className="font-medium text-gray-900">{m.student_name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-2">
-                        <input
-                          type="number" min={0} max={40}
-                          className="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
-                          placeholder="0–40"
-                          value={m.test_score}
-                          onChange={e => updateMark(m.student_id, 'test_score', e.target.value)}
-                        />
-                      </td>
-                      <td className="px-4 py-2">
-                        <input
-                          type="number" min={0} max={60}
-                          className="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
-                          placeholder="0–60"
-                          value={m.exam_score}
-                          onChange={e => updateMark(m.student_id, 'exam_score', e.target.value)}
-                        />
-                      </td>
+                    <td className="px-4 py-2">
+  <input
+    type="number" min={0} max={40}
+    className={`w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 ${
+      m.test_score !== '' && (Number(m.test_score) < 0 || Number(m.test_score) > 40)
+        ? 'border-red-400 bg-red-50'
+        : ''
+    }`}
+    placeholder="0–40"
+    value={m.test_score}
+    onChange={e => updateMark(m.student_id, 'test_score', e.target.value)}
+  />
+</td>
+<td className="px-4 py-2">
+  <input
+    type="number" min={0} max={60}
+    className={`w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 ${
+      m.exam_score !== '' && (Number(m.exam_score) < 0 || Number(m.exam_score) > 60)
+        ? 'border-red-400 bg-red-50'
+        : ''
+    }`}
+    placeholder="0–60"
+    value={m.exam_score}
+    onChange={e => updateMark(m.student_id, 'exam_score', e.target.value)}
+  />
+</td>
                       <td className="px-4 py-3">
                         {hasValues ? (
                           <span className={`font-bold text-sm ${
