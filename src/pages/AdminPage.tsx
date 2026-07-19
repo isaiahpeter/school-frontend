@@ -38,7 +38,7 @@ function AddButton({ onClick, label = '+ Add' }: { onClick: () => void; label?: 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-800">{title}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
@@ -63,10 +63,10 @@ const input = "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none foc
 function StatCard({ label, value, color = 'violet' }: { label: string; value: number | string; color?: string }) {
   const colors: Record<string, string> = {
     violet: 'bg-violet-50 border-violet-200 text-violet-700',
-    blue: 'bg-blue-50 border-blue-200 text-blue-700',
-    green: 'bg-green-50 border-green-200 text-green-700',
-    amber: 'bg-amber-50 border-amber-200 text-amber-700',
-    pink: 'bg-pink-50 border-pink-200 text-pink-700',
+    blue:   'bg-blue-50 border-blue-200 text-blue-700',
+    green:  'bg-green-50 border-green-200 text-green-700',
+    amber:  'bg-amber-50 border-amber-200 text-amber-700',
+    pink:   'bg-pink-50 border-pink-200 text-pink-700',
   }
   return (
     <div className={`border rounded-xl px-4 py-4 ${colors[color]}`}>
@@ -76,62 +76,64 @@ function StatCard({ label, value, color = 'violet' }: { label: string; value: nu
   )
 }
 
+const API_BASE = 'https://school-api-e09o.onrender.com'
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('overview')
-  const [schools, setSchools] = useState<School[]>([])
-  const [terms, setTerms] = useState<Term[]>([])
-  const [classes, setClasses] = useState<Class[]>([])
-  const [teachers, setTeachers] = useState<Teacher[]>([])
-  const [students, setStudents] = useState<Student[]>([])
-  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [schools,     setSchools]     = useState<School[]>([])
+  const [terms,       setTerms]       = useState<Term[]>([])
+  const [classes,     setClasses]     = useState<Class[]>([])
+  const [teachers,    setTeachers]    = useState<Teacher[]>([])
+  const [students,    setStudents]    = useState<Student[]>([])
+  const [subjects,    setSubjects]    = useState<Subject[]>([])
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
-  const [grades, setGrades] = useState<GradeScale[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [grades,      setGrades]      = useState<GradeScale[]>([])
+  const [users,       setUsers]       = useState<User[]>([])
 
   // ── Modal visibility ──
-  const [showSchoolModal, setShowSchoolModal] = useState(false)
-  const [showTermModal, setShowTermModal] = useState(false)
-  const [showEnrollModal, setShowEnrollModal] = useState(false)
-  const [showSubjectModal, setShowSubjectModal] = useState(false)
-  const [showClassModal, setShowClassModal] = useState(false)
-  const [showPromoteModal, setShowPromoteModal] = useState(false)
+  const [showSchoolModal,   setShowSchoolModal]   = useState(false)
+  const [showTermModal,     setShowTermModal]      = useState(false)
+  const [showEnrollModal,   setShowEnrollModal]    = useState(false)
+  const [showSubjectModal,  setShowSubjectModal]   = useState(false)
+  const [showClassModal,    setShowClassModal]     = useState(false)
+  const [showPromoteModal,  setShowPromoteModal]   = useState(false)
+  const [showDiscountModal, setShowDiscountModal]  = useState(false)
 
   // ── Form state ──
-  const [schoolForm, setSchoolForm] = useState({ name: '', address: '', phone: '', email: '' })
-  const [termForm, setTermForm] = useState({ name: '', academic_year: '', school_id: '', start_date: '', end_date: '' })
-  const [enrollForm, setEnrollForm] = useState({ student_id: '', class_id: '' })
-  const [subjectForm, setSubjectForm] = useState({ name: '', code: '', description: '' })
-  const [classForm, setClassForm] = useState({ name: '', section: '', academic_year: '' })
-  const [promoteStudentId, setPromoteStudentId] = useState('')
-  const [promoteNewClassId, setPromoteNewClassId] = useState('')
+  const [schoolForm,      setSchoolForm]      = useState({ name: '', address: '', phone: '', email: '' })
+  const [termForm,        setTermForm]        = useState({ name: '', academic_year: '', school_id: '', start_date: '', end_date: '' })
+  const [enrollForm,      setEnrollForm]      = useState({ student_id: '', class_id: '' })
+  const [subjectForm,     setSubjectForm]     = useState({ name: '', code: '', description: '' })
+  const [classForm,       setClassForm]       = useState({ name: '', section: '', academic_year: '' })
+  const [promoteStudentId,   setPromoteStudentId]   = useState('')
+  const [promoteNewClassId,  setPromoteNewClassId]  = useState('')
 
   // Discounts
   const [discountStudentId, setDiscountStudentId] = useState('')
-  const [discountTermId, setDiscountTermId] = useState('')
-  const [discountType, setDiscountType] = useState<'fixed'|'percentage'>('fixed')
-  const [discountValue, setDiscountValue] = useState('')
-  const [discountReason, setDiscountReason] = useState('')
-  const [discountData, setDiscountData] = useState<any>(null)
-  const [loadingDiscount, setLoadingDiscount] = useState(false)
-  const [showDiscountModal, setShowDiscountModal] = useState(false)
+  const [discountTermId,    setDiscountTermId]    = useState('')
+  const [discountType,      setDiscountType]      = useState<'fixed'|'percentage'>('fixed')
+  const [discountValue,     setDiscountValue]     = useState('')
+  const [discountReason,    setDiscountReason]    = useState('')
+  const [discountData,      setDiscountData]      = useState<any>(null)
+  const [loadingDiscount,   setLoadingDiscount]   = useState(false)
 
   // Fee items
   const [feeClass, setFeeClass] = useState('')
-  const [feeTerm, setFeeTerm] = useState('')
+  const [feeTerm,  setFeeTerm]  = useState('')
   const [feeItems, setFeeItems] = useState([{ item_name: '', amount: '', category: 'tuition' as 'tuition'|'admission'|'other'|'extra' }])
 
   // Users
   const [selectedUserId, setSelectedUserId] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [newRole, setNewRole] = useState('student')
-  const [userActionTab, setUserActionTab] = useState<'password'|'role'|'delete'>('password')
+  const [newPassword,    setNewPassword]    = useState('')
+  const [newRole,        setNewRole]        = useState('student')
+  const [userActionTab,  setUserActionTab]  = useState<'password'|'role'|'delete'>('password')
   const [linkParentForm, setLinkParentForm] = useState({ parent_user_id: '', student_id: '' })
 
   const [saving, setSaving] = useState(false)
 
-  // Load all data on mount
+  // ── Load all data ──
   useEffect(() => {
     const load = async () => {
       try {
@@ -162,7 +164,7 @@ export default function AdminPage() {
     load()
   }, [])
 
-  // ── Actions ──
+  // ── School ──
   async function createSchool() {
     if (!schoolForm.name.trim()) return toast.error('School name required')
     setSaving(true)
@@ -173,11 +175,14 @@ export default function AdminPage() {
       setSchools(res.data?.value ?? res.data ?? [])
       setShowSchoolModal(false)
       setSchoolForm({ name: '', address: '', phone: '', email: '' })
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
+  // ── Term ──
   async function createTerm() {
-    if (!termForm.name.trim() || !termForm.academic_year.trim() || !termForm.school_id) return toast.error('Name, academic year and school required')
+    if (!termForm.name.trim() || !termForm.academic_year.trim() || !termForm.school_id)
+      return toast.error('Name, academic year and school required')
     setSaving(true)
     try {
       await api.post('/api/terms', termForm)
@@ -186,41 +191,59 @@ export default function AdminPage() {
       setTerms(res.data?.value ?? res.data ?? [])
       setShowTermModal(false)
       setTermForm({ name: '', academic_year: '', school_id: '', start_date: '', end_date: '' })
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
+  // ── Class ──
   async function createClass() {
-    if (!classForm.name.trim() || !classForm.section.trim() || !classForm.academic_year.trim()) return toast.error('Name, section and academic year required')
+    if (!classForm.name.trim() || !classForm.section.trim() || !classForm.academic_year.trim())
+      return toast.error('Name, section and academic year required')
     const school_id = schools[0]?.id
     if (!school_id) return toast.error('No school found')
     setSaving(true)
     try {
-      await api.post('/api/classes', { ...classForm, school_id, name: classForm.name.toUpperCase(), section: classForm.section.toUpperCase() })
+      await api.post('/api/classes', {
+        ...classForm, school_id,
+        name:    classForm.name.toUpperCase(),
+        section: classForm.section.toUpperCase(),
+      })
       toast.success('Class created')
       const res = await api.get('/api/classes')
       setClasses(res.data?.value ?? res.data ?? [])
       setShowClassModal(false)
       setClassForm({ name: '', section: '', academic_year: '' })
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
+  // ── Subject ──
   async function createSubject() {
-    if (!subjectForm.name.trim() || !subjectForm.code.trim()) return toast.error('Name and code required')
+    if (!subjectForm.name.trim() || !subjectForm.code.trim())
+      return toast.error('Name and code required')
     const school_id = schools[0]?.id
     if (!school_id) return toast.error('No school found')
     setSaving(true)
     try {
-      await api.post('/api/subjects', { name: subjectForm.name.toUpperCase(), code: subjectForm.code.toUpperCase(), description: subjectForm.description, school_id })
+      await api.post('/api/subjects', {
+        name:        subjectForm.name.toUpperCase(),
+        code:        subjectForm.code.toUpperCase(),
+        description: subjectForm.description,
+        school_id,
+      })
       toast.success('Subject created')
       const res = await api.get('/api/subjects')
       setSubjects(res.data?.value ?? res.data ?? [])
       setShowSubjectModal(false)
       setSubjectForm({ name: '', code: '', description: '' })
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
+  // ── Enrollment ──
   async function createEnrollment() {
-    if (!enrollForm.student_id || !enrollForm.class_id) return toast.error('Select student and class')
+    if (!enrollForm.student_id || !enrollForm.class_id)
+      return toast.error('Select student and class')
     setSaving(true)
     try {
       await api.post('/api/enrollments', enrollForm)
@@ -229,20 +252,26 @@ export default function AdminPage() {
       setEnrollments(res.data?.value ?? res.data ?? [])
       setShowEnrollModal(false)
       setEnrollForm({ student_id: '', class_id: '' })
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
-  // ── Promotion ──
+  // ── Promote ──
   async function promoteStudent() {
-    if (!promoteStudentId || !promoteNewClassId) return toast.error('Select student and new class')
+    if (!promoteStudentId || !promoteNewClassId)
+      return toast.error('Select student and new class')
     setSaving(true)
     try {
-      await api.post('/api/enrollments/promote', { student_id: promoteStudentId, new_class_id: promoteNewClassId })
+      await api.post('/api/enrollments/promote', {
+        student_id: promoteStudentId,
+        new_class_id: promoteNewClassId,
+      })
       toast.success('Student promoted')
       setShowPromoteModal(false)
       setPromoteStudentId('')
       setPromoteNewClassId('')
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
   // ── Discounts ──
@@ -250,20 +279,31 @@ export default function AdminPage() {
     if (!discountStudentId || !discountTermId) return
     setLoadingDiscount(true)
     try {
-      const res = await api.get('/api/discounts', { params: { student_id: discountStudentId, term_id: discountTermId } })
+      const res = await api.get('/api/discounts', {
+        params: { student_id: discountStudentId, term_id: discountTermId },
+      })
       setDiscountData(res.data)
-    } catch { setDiscountData(null) } finally { setLoadingDiscount(false) }
+    } catch { setDiscountData(null) }
+    finally { setLoadingDiscount(false) }
   }
 
   async function saveDiscount() {
-    if (!discountStudentId || !discountTermId || !discountValue) return toast.error('Fill required fields')
+    if (!discountStudentId || !discountTermId || !discountValue)
+      return toast.error('Fill required fields')
     setSaving(true)
     try {
-      await api.post('/api/discounts', { student_id: discountStudentId, term_id: discountTermId, discount_type: discountType, discount_value: Number(discountValue), reason: discountReason || undefined })
+      await api.post('/api/discounts', {
+        student_id:     discountStudentId,
+        term_id:        discountTermId,
+        discount_type:  discountType,
+        discount_value: Number(discountValue),
+        reason:         discountReason || undefined,
+      })
       toast.success('Discount saved')
       await fetchDiscount()
       setShowDiscountModal(false)
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
   async function deleteDiscount() {
@@ -283,9 +323,18 @@ export default function AdminPage() {
     if (filled.length === 0) return toast.error('Add at least one fee item')
     setSaving(true)
     try {
-      await api.post('/api/fees/items', { class_id: feeClass, term_id: feeTerm, items: filled.map(i => ({ item_name: i.item_name.trim(), amount: Number(i.amount), category: i.category })) })
+      await api.post('/api/fees/items', {
+        class_id: feeClass,
+        term_id:  feeTerm,
+        items: filled.map(i => ({
+          item_name: i.item_name.trim(),
+          amount:    Number(i.amount),
+          category:  i.category,
+        })),
+      })
       toast.success('Fee items saved')
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
   // ── Users ──
@@ -297,7 +346,8 @@ export default function AdminPage() {
       await api.put(`/api/users/${selectedUserId}/password`, { newPassword })
       toast.success('Password updated')
       setNewPassword('')
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
   async function changeRole() {
@@ -306,7 +356,10 @@ export default function AdminPage() {
     try {
       await api.put(`/api/users/${selectedUserId}/role`, { role: newRole })
       toast.success('Role updated')
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+      const res = await api.get('/api/users')
+      setUsers(res.data ?? [])
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
   async function deleteUser() {
@@ -319,32 +372,43 @@ export default function AdminPage() {
       setSelectedUserId('')
       const res = await api.get('/api/users')
       setUsers(res.data ?? [])
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
   async function linkParent() {
-    if (!linkParentForm.parent_user_id || !linkParentForm.student_id) return toast.error('Enter both parent user ID and student ID')
+    if (!linkParentForm.parent_user_id || !linkParentForm.student_id)
+      return toast.error('Select parent and student')
     setSaving(true)
     try {
       await api.post('/api/users/link-parent', linkParentForm)
-      toast.success('Parent linked')
+      toast.success('Parent linked to student')
       setLinkParentForm({ parent_user_id: '', student_id: '' })
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') } finally { setSaving(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed') }
+    finally { setSaving(false) }
   }
 
+  function copyPDFLink(studentId: string, studentName: string) {
+    const link = `${API_BASE}/api/results/report/${studentId}/latest`
+    navigator.clipboard.writeText(link)
+      .then(() => toast.success(`PDF link copied for ${studentName}`))
+      .catch(() => toast.error('Failed to copy link'))
+  }
+
+  // ── Tabs ──
   const TABS: { key: Tab; label: string }[] = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'schools', label: 'Schools' },
-    { key: 'terms', label: 'Terms' },
-    { key: 'classes', label: 'Classes' },
-    { key: 'teachers', label: 'Teachers' },
-    { key: 'students', label: 'Students' },
-    { key: 'subjects', label: 'Subjects' },
-    { key: 'enrollments', label: 'Enrollments' },
-    { key: 'grading', label: 'Grading' },
-    { key: 'discounts', label: 'Discounts' },
-    { key: 'fees', label: 'Set Fees' },
-    { key: 'users', label: 'Users' },
+    { key: 'overview',    label: '📊 Overview' },
+    { key: 'schools',     label: '🏫 Schools' },
+    { key: 'terms',       label: '📅 Terms' },
+    { key: 'classes',     label: '🎓 Classes' },
+    { key: 'teachers',    label: '👩‍🏫 Teachers' },
+    { key: 'students',    label: '👨‍🎓 Students' },
+    { key: 'subjects',    label: '📚 Subjects' },
+    { key: 'enrollments', label: '📋 Enrollments' },
+    { key: 'grading',     label: '🏆 Grading' },
+    { key: 'discounts',   label: '🏷 Discounts' },
+    { key: 'fees',        label: '💰 Set Fees' },
+    { key: 'users',       label: '👤 Users' },
   ]
 
   return (
@@ -354,11 +418,14 @@ export default function AdminPage() {
         <p className="text-sm text-gray-500">Manage schools, terms, classes, teachers and more</p>
       </div>
 
-      <div className="flex gap-1 flex-wrap border-b">
+      {/* Tab bar */}
+      <div className="flex gap-1 flex-wrap border-b overflow-x-auto">
         {TABS.map(({ key, label }) => (
           <button key={key} onClick={() => setTab(key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === key ? 'border-violet-600 text-violet-600' : 'border-transparent text-gray-500 hover:text-gray-900'
+            className={`px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+              tab === key
+                ? 'border-violet-600 text-violet-600'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}>
             {label}
           </button>
@@ -367,15 +434,15 @@ export default function AdminPage() {
 
       {/* ── Overview ── */}
       {tab === 'overview' && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <StatCard label="Schools" value={schools.length} color="violet" />
-          <StatCard label="Terms" value={terms.length} color="blue" />
-          <StatCard label="Classes" value={classes.length} color="green" />
-          <StatCard label="Teachers" value={teachers.length} color="amber" />
-          <StatCard label="Students" value={students.length} color="pink" />
-          <StatCard label="Subjects" value={subjects.length} color="violet" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatCard label="Schools"     value={schools.length}     color="violet" />
+          <StatCard label="Terms"       value={terms.length}       color="blue" />
+          <StatCard label="Classes"     value={classes.length}     color="green" />
+          <StatCard label="Teachers"    value={teachers.length}    color="amber" />
+          <StatCard label="Students"    value={students.length}    color="pink" />
+          <StatCard label="Subjects"    value={subjects.length}    color="violet" />
           <StatCard label="Enrollments" value={enrollments.length} color="blue" />
-          <StatCard label="Users" value={users.length} color="green" />
+          <StatCard label="Users"       value={users.length}       color="green" />
         </div>
       )}
 
@@ -386,10 +453,17 @@ export default function AdminPage() {
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">Address</th></tr>
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Phone</th>
+                  <th className="px-4 py-3">Address</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {schools.map(s => (
+                {schools.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No schools yet</td></tr>
+                ) : schools.map(s => (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">{s.name}</td>
                     <td className="px-4 py-3 text-gray-600">{s.email || '—'}</td>
@@ -421,10 +495,17 @@ export default function AdminPage() {
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Academic Year</th><th className="px-4 py-3">Start Date</th><th className="px-4 py-3">End Date</th></tr>
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Academic Year</th>
+                  <th className="px-4 py-3">Start Date</th>
+                  <th className="px-4 py-3">End Date</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {terms.map(t => (
+                {terms.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No terms yet</td></tr>
+                ) : terms.map(t => (
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">{t.name}</td>
                     <td className="px-4 py-3 text-gray-600">{t.academic_year}</td>
@@ -462,10 +543,16 @@ export default function AdminPage() {
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Section</th><th className="px-4 py-3">Academic Year</th></tr>
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Section</th>
+                  <th className="px-4 py-3">Academic Year</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {classes.map(c => (
+                {classes.length === 0 ? (
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400">No classes yet</td></tr>
+                ) : classes.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">{c.name}</td>
                     <td className="px-4 py-3 text-gray-600">{c.section}</td>
@@ -495,10 +582,18 @@ export default function AdminPage() {
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Employee Code</th><th className="px-4 py-3">Specialization</th><th className="px-4 py-3">Hire Date</th></tr>
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Employee Code</th>
+                  <th className="px-4 py-3">Specialization</th>
+                  <th className="px-4 py-3">Hire Date</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {teachers.map(t => (
+                {teachers.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No teachers yet</td></tr>
+                ) : teachers.map(t => (
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">{t.users?.full_name}</td>
                     <td className="px-4 py-3 text-gray-600">{t.users?.email}</td>
@@ -513,26 +608,52 @@ export default function AdminPage() {
         </>
       )}
 
-      {/* ── Students (with Promote) ── */}
+      {/* ── Students ── */}
       {tab === 'students' && (
         <>
-          <SectionHeader title="Students" action={<AddButton onClick={() => setShowPromoteModal(true)} label="⬆ Promote" />} />
+          <SectionHeader
+            title="Students"
+            action={
+              <div className="flex gap-2">
+                <AddButton onClick={() => setShowPromoteModal(true)} label="⬆ Promote" />
+              </div>
+            }
+          />
           <div className="bg-white border rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Admission No.</th><th className="px-4 py-3">Enrollment Date</th></tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {students.map(s => (
-                  <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{s.users?.full_name}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.users?.email}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.admission_number || '—'}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.enrollment_date || '—'}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
+                  <tr>
+                    <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Email</th>
+                    <th className="px-4 py-3">Admission No.</th>
+                    <th className="px-4 py-3">Enrollment Date</th>
+                    <th className="px-4 py-3">Report PDF</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {students.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No students yet</td></tr>
+                  ) : students.map(s => (
+                    <tr key={s.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium">{s.users?.full_name}</td>
+                      <td className="px-4 py-3 text-gray-600">{s.users?.email}</td>
+                      <td className="px-4 py-3 text-gray-600">{s.admission_number || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">{s.enrollment_date || '—'}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => copyPDFLink(s.id, s.users?.full_name)}
+                          className="text-xs text-violet-600 hover:text-violet-800 hover:underline whitespace-nowrap"
+                          title="Copy PDF download link for latest term"
+                        >
+                          📄 Copy PDF Link
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {showPromoteModal && (
@@ -549,8 +670,11 @@ export default function AdminPage() {
                   {classes.map(c => <option key={c.id} value={c.id}>{c.name} {c.section}</option>)}
                 </select>
               </Field>
-              <button onClick={promoteStudent} disabled={saving} className="w-full mt-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
-                {saving ? 'Promoting…' : 'Promote'}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-3">
+                This will archive the current enrollment and create a new one in the selected class.
+              </div>
+              <button onClick={promoteStudent} disabled={saving} className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                {saving ? 'Promoting…' : 'Promote Student'}
               </button>
             </Modal>
           )}
@@ -564,13 +688,19 @@ export default function AdminPage() {
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Code</th><th className="px-4 py-3">Description</th></tr>
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Code</th>
+                  <th className="px-4 py-3">Description</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {subjects.map(s => (
+                {subjects.length === 0 ? (
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400">No subjects yet</td></tr>
+                ) : subjects.map(s => (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">{s.name}</td>
-                    <td className="px-4 py-3"><span className="bg-gray-100 text-gray-600 text-xs font-mono px-2 py-0.5 rounded">{s.code}</span></td>
+                    <td className="px-4 py-3"><span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{s.code}</span></td>
                     <td className="px-4 py-3 text-gray-600">{s.description || '—'}</td>
                   </tr>
                 ))}
@@ -579,8 +709,8 @@ export default function AdminPage() {
           </div>
           {showSubjectModal && (
             <Modal title="Create Subject" onClose={() => setShowSubjectModal(false)}>
-              <Field label="Subject Name *"><input className={input} placeholder="e.g. BASIC TECHNOLOGY" value={subjectForm.name} onChange={e => setSubjectForm(f => ({ ...f, name: e.target.value }))} /></Field>
-              <Field label="Subject Code *"><input className={input} placeholder="e.g. BTECH" value={subjectForm.code} onChange={e => setSubjectForm(f => ({ ...f, code: e.target.value }))} /></Field>
+              <Field label="Subject Name *"><input className={input} placeholder="e.g. MATHEMATICS" value={subjectForm.name} onChange={e => setSubjectForm(f => ({ ...f, name: e.target.value }))} /></Field>
+              <Field label="Subject Code *"><input className={input} placeholder="e.g. MATH" value={subjectForm.code} onChange={e => setSubjectForm(f => ({ ...f, code: e.target.value }))} /></Field>
               <Field label="Description"><input className={input} value={subjectForm.description} onChange={e => setSubjectForm(f => ({ ...f, description: e.target.value }))} /></Field>
               <button onClick={createSubject} disabled={saving} className="w-full mt-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
                 {saving ? 'Creating…' : 'Create Subject'}
@@ -597,15 +727,28 @@ export default function AdminPage() {
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Class</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Status</th></tr>
+                <tr>
+                  <th className="px-4 py-3">Student</th>
+                  <th className="px-4 py-3">Class</th>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Status</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {enrollments.map(e => (
+                {enrollments.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No enrollments yet</td></tr>
+                ) : enrollments.map(e => (
                   <tr key={e.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">{e.students?.users?.full_name}</td>
-                    <td className="px-4 py-3 text-gray-600">{e.classes?.name}</td>
+                    <td className="px-4 py-3 text-gray-600">{e.classes?.name || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{e.enrollment_date}</td>
-                    <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded font-medium ${e.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{e.status}</span></td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                        e.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {e.status}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -640,12 +783,27 @@ export default function AdminPage() {
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide text-left">
-                <tr><th className="px-4 py-3">Grade</th><th className="px-4 py-3">Min %</th><th className="px-4 py-3">Max %</th><th className="px-4 py-3">Grade Point</th><th className="px-4 py-3">Remark</th></tr>
+                <tr>
+                  <th className="px-4 py-3">Grade</th>
+                  <th className="px-4 py-3">Min %</th>
+                  <th className="px-4 py-3">Max %</th>
+                  <th className="px-4 py-3">Grade Point</th>
+                  <th className="px-4 py-3">Remark</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {[...grades].sort((a, b) => b.min_percent - a.min_percent).map(g => (
                   <tr key={g.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${g.grade === 'A+' ? 'bg-emerald-100 text-emerald-700' : g.grade === 'A' ? 'bg-green-100 text-green-700' : g.grade === 'B' ? 'bg-blue-100 text-blue-700' : g.grade === 'C' ? 'bg-yellow-100 text-yellow-700' : g.grade === 'D' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>{g.grade}</span></td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${
+                        g.grade === 'A+' ? 'bg-emerald-100 text-emerald-700' :
+                        g.grade === 'A'  ? 'bg-green-100 text-green-700' :
+                        g.grade === 'B'  ? 'bg-blue-100 text-blue-700' :
+                        g.grade === 'C'  ? 'bg-yellow-100 text-yellow-700' :
+                        g.grade === 'D'  ? 'bg-orange-100 text-orange-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>{g.grade}</span>
+                    </td>
                     <td className="px-4 py-3 text-gray-600">{g.min_percent}%</td>
                     <td className="px-4 py-3 text-gray-600">{g.max_percent}%</td>
                     <td className="px-4 py-3 text-gray-600">{g.grade_point}</td>
@@ -673,32 +831,57 @@ export default function AdminPage() {
                 <option value="">— Select Term —</option>
                 {terms.map(t => <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>)}
               </select>
-              <button onClick={fetchDiscount} disabled={loadingDiscount} className="px-4 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 disabled:opacity-60 transition-colors">
+              <button onClick={fetchDiscount} disabled={loadingDiscount}
+                className="px-4 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 disabled:opacity-60 transition-colors">
                 {loadingDiscount ? 'Loading…' : 'Fetch'}
               </button>
             </div>
             {discountData && (
-              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center justify-between">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center justify-between">
                 <div>
                   <div className="font-medium text-amber-800">
-                    {discountData.discount_type === 'percentage' ? `${discountData.discount_value}% discount` : `₦${Number(discountData.discount_value).toLocaleString()} discount`}
+                    {discountData.discount_type === 'percentage'
+                      ? `${discountData.discount_value}% discount`
+                      : `₦${Number(discountData.discount_value).toLocaleString()} discount`}
                   </div>
                   {discountData.reason && <div className="text-sm text-amber-600 mt-0.5">{discountData.reason}</div>}
                 </div>
-                <button onClick={deleteDiscount} className="text-sm text-red-600 hover:text-red-800 font-medium border border-red-200 px-3 py-1 rounded-lg hover:bg-red-50 transition-colors">Remove</button>
+                <button onClick={deleteDiscount}
+                  className="text-sm text-red-600 hover:text-red-800 font-medium border border-red-200 px-3 py-1 rounded-lg hover:bg-red-50 transition-colors">
+                  Remove
+                </button>
               </div>
             )}
             {discountData === null && discountStudentId && discountTermId && !loadingDiscount && (
-              <div className="text-sm text-gray-400 mt-2">No discount found for this student/term</div>
+              <div className="text-sm text-gray-400">No discount found for this student/term</div>
             )}
           </div>
           {showDiscountModal && (
             <Modal title="Set Discount" onClose={() => setShowDiscountModal(false)}>
-              <Field label="Student *"><select className={input} value={discountStudentId} onChange={e => setDiscountStudentId(e.target.value)}><option value="">— Select —</option>{students.map(s => <option key={s.id} value={s.id}>{s.users?.full_name}</option>)}</select></Field>
-              <Field label="Term *"><select className={input} value={discountTermId} onChange={e => setDiscountTermId(e.target.value)}><option value="">— Select —</option>{terms.map(t => <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>)}</select></Field>
-              <Field label="Discount Type *"><select className={input} value={discountType} onChange={e => setDiscountType(e.target.value as any)}><option value="fixed">Fixed Amount (₦)</option><option value="percentage">Percentage (%)</option></select></Field>
-              <Field label={`Value ${discountType === 'percentage' ? '(%)' : '(₦)'} *`}><input className={input} type="number" min={0} value={discountValue} onChange={e => setDiscountValue(e.target.value)} /></Field>
-              <Field label="Reason"><input className={input} placeholder="e.g. Sibling discount" value={discountReason} onChange={e => setDiscountReason(e.target.value)} /></Field>
+              <Field label="Student *">
+                <select className={input} value={discountStudentId} onChange={e => setDiscountStudentId(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {students.map(s => <option key={s.id} value={s.id}>{s.users?.full_name}</option>)}
+                </select>
+              </Field>
+              <Field label="Term *">
+                <select className={input} value={discountTermId} onChange={e => setDiscountTermId(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {terms.map(t => <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>)}
+                </select>
+              </Field>
+              <Field label="Discount Type *">
+                <select className={input} value={discountType} onChange={e => setDiscountType(e.target.value as any)}>
+                  <option value="fixed">Fixed Amount (₦)</option>
+                  <option value="percentage">Percentage (%)</option>
+                </select>
+              </Field>
+              <Field label={`Value ${discountType === 'percentage' ? '(%)' : '(₦)'} *`}>
+                <input className={input} type="number" min={0} value={discountValue} onChange={e => setDiscountValue(e.target.value)} />
+              </Field>
+              <Field label="Reason">
+                <input className={input} placeholder="e.g. Sibling discount" value={discountReason} onChange={e => setDiscountReason(e.target.value)} />
+              </Field>
               <button onClick={saveDiscount} disabled={saving} className="w-full mt-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
                 {saving ? 'Saving…' : 'Save Discount'}
               </button>
@@ -731,31 +914,54 @@ export default function AdminPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700">Fee Items</span>
-                <button onClick={() => setFeeItems(f => [...f, { item_name: '', amount: '', category: 'other' }])} className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Row</button>
+                <button
+                  onClick={() => setFeeItems(f => [...f, { item_name: '', amount: '', category: 'other' }])}
+                  className="text-xs text-violet-600 hover:text-violet-800 font-medium"
+                >
+                  + Add Row
+                </button>
               </div>
               <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                <span className="col-span-5">Item Name</span><span className="col-span-3">Amount (₦)</span><span className="col-span-3">Category</span><span className="col-span-1"></span>
+                <span className="col-span-5">Item Name</span>
+                <span className="col-span-3">Amount (₦)</span>
+                <span className="col-span-3">Category</span>
+                <span className="col-span-1"></span>
               </div>
               {feeItems.map((item, idx) => (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                  <input className={`col-span-5 ${input}`} placeholder="e.g. Tuition" value={item.item_name} onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, item_name: e.target.value } : x))} />
-                  <input className={`col-span-3 ${input}`} type="number" min={0} placeholder="0" value={item.amount} onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} />
-                  <select className={`col-span-3 ${input}`} value={item.category} onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, category: e.target.value as any } : x))}>
-                    <option value="tuition">Tuition</option><option value="admission">Admission</option><option value="other">Other</option><option value="extra">Extra</option>
+                  <input className={`col-span-5 ${input}`} placeholder="e.g. Tuition"
+                    value={item.item_name}
+                    onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, item_name: e.target.value } : x))} />
+                  <input className={`col-span-3 ${input}`} type="number" min={0} placeholder="0"
+                    value={item.amount}
+                    onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} />
+                  <select className={`col-span-3 ${input}`} value={item.category}
+                    onChange={e => setFeeItems(f => f.map((x, i) => i === idx ? { ...x, category: e.target.value as any } : x))}>
+                    <option value="tuition">Tuition</option>
+                    <option value="admission">Admission</option>
+                    <option value="other">Other</option>
+                    <option value="extra">Extra</option>
                   </select>
-                  {feeItems.length > 1 && <button onClick={() => setFeeItems(f => f.filter((_, i) => i !== idx))} className="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none">✕</button>}
+                  {feeItems.length > 1 && (
+                    <button onClick={() => setFeeItems(f => f.filter((_, i) => i !== idx))}
+                      className="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none">✕</button>
+                  )}
                 </div>
               ))}
-              <div className="pt-2 border-t text-sm font-medium text-gray-700 flex justify-between"><span>Total</span><span>₦{feeItems.reduce((s, i) => s + (Number(i.amount) || 0), 0).toLocaleString()}</span></div>
+              <div className="pt-2 border-t text-sm font-medium text-gray-700 flex justify-between">
+                <span>Total</span>
+                <span>₦{feeItems.reduce((s, i) => s + (Number(i.amount) || 0), 0).toLocaleString()}</span>
+              </div>
             </div>
-            <button onClick={saveFeeItems} disabled={saving} className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-lg disabled:opacity-60 transition-colors">
+            <button onClick={saveFeeItems} disabled={saving}
+              className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-lg disabled:opacity-60 transition-colors">
               {saving ? 'Saving…' : 'Save Fee Items'}
             </button>
           </div>
         </>
       )}
 
-      {/* ── Users (with dropdown from API) ── */}
+      {/* ── Users ── */}
       {tab === 'users' && (
         <>
           <SectionHeader title="User Management" />
@@ -763,20 +969,35 @@ export default function AdminPage() {
             <Field label="Select User *">
               <select className={input} value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
                 <option value="">— Choose a user —</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.role}) – {u.email}</option>)}
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name} ({u.role}) – {u.email}
+                  </option>
+                ))}
               </select>
             </Field>
+
             <div className="flex gap-1 border-b">
-              {(['password','role','delete'] as const).map(t => (
-                <button key={t} onClick={() => setUserActionTab(t)} className={`px-3 py-1.5 text-sm font-medium border-b-2 capitalize transition-colors ${userActionTab === t ? 'border-violet-600 text-violet-600' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
+              {(['password', 'role', 'delete'] as const).map(t => (
+                <button key={t} onClick={() => setUserActionTab(t)}
+                  className={`px-3 py-1.5 text-sm font-medium border-b-2 capitalize transition-colors ${
+                    userActionTab === t
+                      ? 'border-violet-600 text-violet-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-900'
+                  }`}>
                   {t === 'password' ? '🔑 Password' : t === 'role' ? '👤 Role' : '🗑 Delete'}
                 </button>
               ))}
             </div>
+
             {userActionTab === 'password' && (
               <>
-                <Field label="New Password *"><input className={input} type="password" placeholder="Min. 6 characters" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></Field>
-                <button onClick={changePassword} disabled={saving} className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                <Field label="New Password *">
+                  <input className={input} type="password" placeholder="Min. 6 characters"
+                    value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                </Field>
+                <button onClick={changePassword} disabled={saving}
+                  className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
                   {saving ? 'Updating…' : 'Update Password'}
                 </button>
               </>
@@ -791,36 +1012,85 @@ export default function AdminPage() {
                     <option value="parent">Parent</option>
                   </select>
                 </Field>
-                <button onClick={changeRole} disabled={saving} className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                <button onClick={changeRole} disabled={saving}
+                  className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
                   {saving ? 'Updating…' : 'Update Role'}
                 </button>
               </>
             )}
             {userActionTab === 'delete' && (
               <>
-                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">⚠️ This action is permanent and cannot be undone. The last admin cannot be deleted.</div>
-                <button onClick={deleteUser} disabled={saving} className="w-full py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                  ⚠️ This action is permanent and cannot be undone.
+                </div>
+                <button onClick={deleteUser} disabled={saving}
+                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
                   {saving ? 'Deleting…' : 'Delete User'}
                 </button>
               </>
             )}
+
+            {/* Link parent to student */}
             <div className="pt-4 border-t space-y-3">
               <div className="font-medium text-sm text-gray-700">🔗 Link Parent to Student</div>
-              <Field label="Parent User ID *">
-                <select className={input} value={linkParentForm.parent_user_id} onChange={e => setLinkParentForm(f => ({ ...f, parent_user_id: e.target.value }))}>
+              <Field label="Parent *">
+                <select className={input} value={linkParentForm.parent_user_id}
+                  onChange={e => setLinkParentForm(f => ({ ...f, parent_user_id: e.target.value }))}>
                   <option value="">— Select Parent —</option>
-                  {users.filter(u => u.role === 'parent').map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>)}
+                  {users.filter(u => u.role === 'parent').map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                  ))}
                 </select>
               </Field>
               <Field label="Student *">
-                <select className={input} value={linkParentForm.student_id} onChange={e => setLinkParentForm(f => ({ ...f, student_id: e.target.value }))}>
+                <select className={input} value={linkParentForm.student_id}
+                  onChange={e => setLinkParentForm(f => ({ ...f, student_id: e.target.value }))}>
                   <option value="">— Select Student —</option>
                   {students.map(s => <option key={s.id} value={s.id}>{s.users?.full_name}</option>)}
                 </select>
               </Field>
-              <button onClick={linkParent} disabled={saving} className="w-full py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
+              <button onClick={linkParent} disabled={saving}
+                className="w-full py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors">
                 {saving ? 'Linking…' : 'Link Parent to Student'}
               </button>
+            </div>
+
+            {/* All users table */}
+            <div className="pt-4 border-t">
+              <div className="font-medium text-sm text-gray-700 mb-3">All Users ({users.length})</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide text-left">
+                    <tr>
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2">Email</th>
+                      <th className="px-3 py-2">Role</th>
+                      <th className="px-3 py-2">Telegram</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {users.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 font-medium">{u.full_name}</td>
+                        <td className="px-3 py-2 text-gray-600">{u.email}</td>
+                        <td className="px-3 py-2">
+                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                            u.role === 'admin'   ? 'bg-violet-100 text-violet-700' :
+                            u.role === 'teacher' ? 'bg-blue-100 text-blue-700' :
+                            u.role === 'parent'  ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-500">
+                          {u.telegram_chat_id ? '✅ Linked' : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </>

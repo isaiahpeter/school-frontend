@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 import { useAuth } from '../hooks/useAuth'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Term {
-  id: string
-  name: string
-  academic_year: string
-}
-
-interface Child {
-  student_id: string
-  students: { users: { full_name: string } }
-}
+interface Term    { id: string; name: string; academic_year: string }
+interface Child   { student_id: string; students: { users: { full_name: string } } }
+interface Subject { id: string; name: string; code: string }
+interface Class   { id: string; name: string; section: string }
 
 interface Result {
   id: string
@@ -30,6 +26,7 @@ interface Result {
   student_name?: string
   subject_name?: string
   subjects?: { code: string; name: string }
+  students?: { id: string; users: { full_name: string } }
 }
 
 interface StudentOverall {
@@ -40,6 +37,25 @@ interface StudentOverall {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function gradeFromPct(pct: number) {
+  if (pct >= 80) return 'A+'
+  if (pct >= 70) return 'A'
+  if (pct >= 60) return 'B'
+  if (pct >= 50) return 'C'
+  if (pct >= 40) return 'D'
+  if (pct >= 30) return 'E'
+  return 'F'
+}
+
+function remarkFromPct(pct: number) {
+  if (pct >= 80) return 'Excellent'
+  if (pct >= 70) return 'Very Good'
+  if (pct >= 60) return 'Good'
+  if (pct >= 50) return 'Average'
+  if (pct >= 40) return 'Fair'
+  return 'Below Ave'
+}
 
 const GRADE_COLORS: Record<string, string> = {
   'A+': 'bg-emerald-100 text-emerald-700',
@@ -60,7 +76,7 @@ function GradeBadge({ grade }: { grade: string }) {
 }
 
 function ScoreBar({ value, max }: { value: number; max: number }) {
-  const pct = Math.min(100, (value / max) * 100)
+  const pct   = Math.min(100, (value / max) * 100)
   const color = pct >= 80 ? 'bg-emerald-500' : pct >= 60 ? 'bg-blue-500' : pct >= 40 ? 'bg-yellow-500' : 'bg-red-500'
   return (
     <div className="flex items-center gap-2">
@@ -72,235 +88,338 @@ function ScoreBar({ value, max }: { value: number; max: number }) {
   )
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+const inputClass = "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+
+// ─── Main component ──────────────────────────────────────────────────────────
 
 export default function ResultsPage() {
   const { user } = useAuth()
-  const role = (user as any)?.role ?? 'student'
-  const isStudent = role === 'student'
-  const isParent  = role === 'parent'
-  //const isAdminOrTeacher = role === 'admin' || role === 'teacher'
+  // Force role to lowercase for consistent checks
+  const role             = ((user as any)?.role ?? 'student').toLowerCase()
+  const isStudent        = role === 'student'
+  const isParent         = role === 'parent'
+  const isAdminOrTeacher = role === 'admin' || role === 'teacher'
 
-  const [terms, setTerms] = useState<Term[]>([])
-  const [children, setChildren] = useState<Child[]>([])            // for parent
-  const [results, setResults] = useState<Result[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [searchParams]    = useSearchParams()
+  const urlStudentId      = searchParams.get('student_id')   // from direct link
+
+  const [terms,        setTerms]        = useState<Term[]>([])
+  const [children,     setChildren]     = useState<Child[]>([])
+  const [results,      setResults]      = useState<Result[]>([])
+  const [subjects,     setSubjects]     = useState<Subject[]>([])
+  const [classes,      setClasses]      = useState<Class[]>([])
+  const [allStudents,  setAllStudents]  = useState<{ id: string; name: string }[]>([])
+  const [resultStudents, setResultStudents] = useState<{ id: string; name: string }[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState<string | null>(null)
   const [selectedTerm, setSelectedTerm] = useState('')
   const [selectedStudent, setSelectedStudent] = useState('all')
-  const [myStudentId, setMyStudentId] = useState('')              // student's own id
-  const [activeTab, setActiveTab] = useState<'results' | 'report'>('results')
-  const [reportHtml, setReportHtml] = useState<string | null>(null)
+  const [myStudentId, setMyStudentId]   = useState('')
+  const [activeTab,   setActiveTab]     = useState<'results' | 'report'>('results')
+  const [reportHtml,  setReportHtml]    = useState<string | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
-
-  // For student: store the overall summary from my-results
   const [studentOverall, setStudentOverall] = useState<StudentOverall | null>(null)
 
-  // ── Load terms and, for parents, children ──
+  const [showMarksModal, setShowMarksModal] = useState(false)
+  const [savingMarks,    setSavingMarks]    = useState(false)
+  const [marksForm, setMarksForm] = useState({
+    student_id: '', subject_id: '', term_id: '', class_id: '',
+    test_score: '', exam_score: '',
+  })
+
+  // ── Load initial data ──────────────────────────────────────────────────────
   useEffect(() => {
-    const promises: Promise<any>[] = [api.get('/api/terms')]
-    if (isParent) {
-      promises.push(api.get('/api/users/my-children'))
-    }
-    Promise.all(promises)
-      .then(([termsRes, childrenRes]) => {
-        const termList: Term[] = termsRes.data?.value ?? termsRes.data ?? []
+    const load = async () => {
+      try {
+        const promises: Promise<any>[] = [api.get('/api/terms')]
+        if (isParent)         promises.push(api.get('/api/users/my-children'))
+        if (isAdminOrTeacher) {
+          promises.push(api.get('/api/subjects'))
+          promises.push(api.get('/api/classes'))
+          promises.push(api.get('/api/students'))
+        }
+
+        const results = await Promise.all(promises)
+        const termsRes = results[0]
+        let childrenRes: any, subjectsRes: any, classesRes: any, studentsRes: any
+        if (isParent)         childrenRes  = results[1]
+        if (isAdminOrTeacher) {
+          subjectsRes = results[isParent ? 2 : 1]
+          classesRes  = results[isParent ? 3 : 2]
+          studentsRes = results[isParent ? 4 : 3]
+        }
+
+        const termList: Term[] = Array.isArray(termsRes.data)
+          ? termsRes.data : (termsRes.data?.value ?? [])
         setTerms(termList)
-        if (termList.length > 0) setSelectedTerm(termList[0].id)
+        if (termList.length > 0) {
+          setSelectedTerm(termList[0].id)
+          setMarksForm(f => ({ ...f, term_id: termList[0].id }))
+        }
 
         if (isParent && childrenRes) {
-          const childList: Child[] = childrenRes.data?.value ?? childrenRes.data ?? []
+          const childList: Child[] = Array.isArray(childrenRes.data) ? childrenRes.data : (childrenRes.data?.value ?? [])
           setChildren(childList)
-          if (childList.length > 0) {
-            setSelectedStudent(childList[0].student_id)
+          const defaultId = urlStudentId ?? childList[0]?.student_id ?? ''
+          if (defaultId) setSelectedStudent(defaultId)
+        }
+
+        if (isAdminOrTeacher) {
+          if (subjectsRes) setSubjects(subjectsRes.data?.value ?? subjectsRes.data ?? [])
+          if (classesRes)  setClasses(classesRes.data?.value ?? classesRes.data ?? [])
+          if (studentsRes) {
+            const studentList = studentsRes.data?.value ?? studentsRes.data ?? []
+            setAllStudents(
+              studentList.map((s: any) => ({
+                id:   s.id,
+                name: s.users?.full_name ?? s.id,
+              }))
+            )
           }
         }
-      })
-      .catch(() => setError('Failed to load data'))
-  }, [])
+      } catch (err) {
+        setError('Failed to load data')
+      }
+    }
+    load()
+  }, [isParent, isAdminOrTeacher, urlStudentId])
 
-  // ── Load results when term or student selection changes ──
+  // ── Load results when selection changes ────────────────────────────────────
   useEffect(() => {
     if (!selectedTerm) return
     setLoading(true)
     setError(null)
-
-    // Reset overall for non‑students
     if (!isStudent) setStudentOverall(null)
 
     if (isStudent) {
-      // ───── Student: use dedicated endpoint ─────
       api.get('/api/results/my-results', { params: { term_id: selectedTerm } })
         .then(res => {
           const data = res.data
-          const subjectsArray: Result[] = Array.isArray(data)
-            ? data
-            : data?.subjects ?? data?.value ?? []
-          setResults(subjectsArray)
-
-          const sid = data?.student_id ?? subjectsArray[0]?.student_id ?? ''
+          const arr: Result[] = Array.isArray(data) ? data : (data?.subjects ?? data?.value ?? [])
+          setResults(arr)
+          const sid = data?.student_id ?? arr[0]?.student_id ?? ''
           setMyStudentId(sid)
           if (sid) setSelectedStudent(sid)
-
           if (data?.overall) setStudentOverall(data.overall)
-          else setStudentOverall(null)
         })
         .catch(() => setError('Failed to load your results'))
         .finally(() => setLoading(false))
-    } else if (isParent && selectedStudent && selectedStudent !== 'all') {
-      // ───── Parent: fetch results for selected child ─────
-      api.get(`/api/results/student/${selectedStudent}/term/${selectedTerm}`)
-        .then(res => {
-          const data = res.data
-          const arr: Result[] = Array.isArray(data) ? data : data?.value ?? []
-          setResults(arr)
-        })
-        .catch(() => setError('Failed to load results'))
-        .finally(() => setLoading(false))
-    } else {
-      // ───── Admin/Teacher: list all results ─────
+    } else if (isAdminOrTeacher) {
       api.get('/api/results', { params: { term_id: selectedTerm } })
         .then(res => {
           const all: Result[] = res.data?.value ?? res.data ?? []
           setResults(all)
-          if (!isParent) setSelectedStudent('all')
+          const map = new Map<string, string>()
+          all.forEach(r => {
+            const name = r.student_name ?? r.students?.users?.full_name
+            if (r.student_id && name) map.set(r.student_id, name)
+          })
+          setResultStudents(Array.from(map.entries()).map(([id, name]) => ({ id, name })))
         })
         .catch(() => setError('Failed to load results'))
         .finally(() => setLoading(false))
+    } else {
+      // parent — handled by separate effect below
+      setLoading(false)
     }
-  }, [selectedTerm, selectedStudent, isStudent, isParent])
+  }, [selectedTerm, isStudent, isParent, isAdminOrTeacher])
 
-  // Unique students from results (admin/teacher view)
-  const students = Array.from(
-    new Map(results.map(r => [r.student_id, r.student_name ?? ''])).entries()
-  ).map(([id, name]) => ({ id, name }))
+  // ── Reload when parent switches child ──────────────────────────────────────
+  useEffect(() => {
+    if (!isParent) return
+    if (!selectedStudent || selectedStudent === 'all' || !selectedTerm) return
+    setLoading(true)
+    api.get(`/api/results/student/${selectedStudent}/term/${selectedTerm}`)
+      .then(res => {
+        setResults(Array.isArray(res.data) ? res.data : (res.data?.value ?? []))
+      })
+      .catch(() => setError('Failed to load results'))
+      .finally(() => setLoading(false))
+  }, [selectedStudent, isParent, selectedTerm])
 
-  // Filtered results
+  // ── Derived values ─────────────────────────────────────────────────────────
   const filtered = (isStudent || isParent)
     ? results
     : selectedStudent === 'all'
       ? results
       : results.filter(r => r.student_id === selectedStudent)
 
-  // Summary stats (compute for any role)
-  const avg = filtered.length
-    ? Math.round(filtered.reduce((s, r) => s + r.percentage, 0) / filtered.length)
-    : 0
+  const avg     = filtered.length ? Math.round(filtered.reduce((s, r) => s + r.percentage, 0) / filtered.length) : 0
   const highest = filtered.length ? Math.max(...filtered.map(r => r.percentage)) : 0
-  const lowest = filtered.length ? Math.min(...filtered.map(r => r.percentage)) : 0
+  const lowest  = filtered.length ? Math.min(...filtered.map(r => r.percentage)) : 0
 
-  // Compute overall for parent (since the endpoint returns raw results, not aggregated)
-  const computedOverall: StudentOverall | null = (isParent && filtered.length > 0)
-    ? {
-        totalScore: filtered.reduce((sum, r) => sum + r.total_score, 0),
-        percentage: avg.toFixed(1),
-        grade: getGradeFromPercentage(avg),
-        remark: getRemarkFromPercentage(avg),
-      }
-    : null
+  const computedOverall: StudentOverall | null = (isParent && filtered.length > 0) ? {
+    totalScore: filtered.reduce((s, r) => s + r.total_score, 0),
+    percentage: avg.toFixed(1),
+    grade:  gradeFromPct(avg),
+    remark: remarkFromPct(avg),
+  } : null
 
-  // Helper functions for parent overall
-  function getGradeFromPercentage(pct: number) {
-    if (pct >= 80) return 'A+'
-    if (pct >= 70) return 'A'
-    if (pct >= 60) return 'B'
-    if (pct >= 50) return 'C'
-    if (pct >= 40) return 'D'
-    if (pct >= 30) return 'E'
-    return 'F'
-  }
-  function getRemarkFromPercentage(pct: number) {
-    if (pct >= 80) return 'Excellent'
-    if (pct >= 70) return 'Very Good'
-    if (pct >= 60) return 'Good'
-    if (pct >= 50) return 'Average'
-    if (pct >= 40) return 'Fair'
-    return 'Below Ave'
-  }
-
-  // The student_id to use for report card
   const reportStudentId = isStudent ? myStudentId : selectedStudent
+  const showReportTab   = isStudent ? !!myStudentId : selectedStudent !== 'all'
 
-  // Load HTML report card
+  // ── Report card ────────────────────────────────────────────────────────────
   async function loadReport() {
     if (!selectedTerm || !reportStudentId || reportStudentId === 'all') return
     setReportLoading(true)
     setReportHtml(null)
     try {
-      const res = await api.get(`/api/results/report/${reportStudentId}/term/${selectedTerm}`, {
-        params: { format: 'html' },
-        responseType: 'text',
-      })
+      const res = await api.get(
+        `/api/results/report/${reportStudentId}/term/${selectedTerm}`,
+        { params: { format: 'html' }, responseType: 'text' }
+      )
       setReportHtml(res.data)
     } catch {
       setReportHtml('<p style="color:red;padding:1rem">Failed to load report card.</p>')
-    } finally {
-      setReportLoading(false)
-    }
+    } finally { setReportLoading(false) }
   }
 
   useEffect(() => {
     if (activeTab === 'report') loadReport()
   }, [activeTab, reportStudentId, selectedTerm])
 
-  const showReportTab = isStudent ? !!myStudentId : (isParent ? selectedStudent !== 'all' : selectedStudent !== 'all')
+  // ── PDF download for a specific term ───────────────────────────────────────
+  async function downloadPDF(studentId: string, termId: string, filename = 'report-card.pdf') {
+    try {
+      const res = await api.get(
+        `/api/results/report/${studentId}/term/${termId}`,
+        { params: { format: 'pdf' }, responseType: 'blob' }
+      )
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to download PDF')
+    }
+  }
 
+  async function downloadLatestPDF(studentId: string) {
+    try {
+      const res = await api.get(
+        `/api/results/report/${studentId}/latest`,
+        { responseType: 'blob' }
+      )
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = 'report-card-latest.pdf'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to download PDF')
+    }
+  }
+
+    // ── Save marks ─────────────────────────────────────────────────────────────
+  async function saveMarks() {
+    const { student_id, subject_id, term_id, class_id, test_score, exam_score } = marksForm
+    if (!student_id || !subject_id || !term_id || !class_id)
+      return toast.error('Fill all required fields')
+    const t = Number(test_score)
+    const e = Number(exam_score)
+    if (isNaN(t) || t < 0 || t > 40) return toast.error('Test score must be 0–40')
+    if (isNaN(e) || e < 0 || e > 60) return toast.error('Exam score must be 0–60')
+    setSavingMarks(true)
+    try {
+      await api.post('/api/results', {
+        student_id, subject_id, term_id, class_id,
+        test_score: t, exam_score: e,
+      })
+      toast.success('Marks saved')
+      setShowMarksModal(false)
+      setMarksForm(f => ({ ...f, student_id: '', subject_id: '', test_score: '', exam_score: '' }))
+      // Refresh results
+      if (selectedTerm) {
+        api.get('/api/results', { params: { term_id: selectedTerm } }).then(res => {
+          const all: Result[] = res.data?.value ?? res.data ?? []
+          setResults(all)
+          const map = new Map<string, string>()
+          all.forEach(r => {
+            const name = r.student_name ?? r.students?.users?.full_name
+            if (r.student_id && name) map.set(r.student_id, name)
+          })
+          setResultStudents(Array.from(map.entries()).map(([id, name]) => ({ id, name })))
+        }).catch(() => {})
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Failed to save marks')
+    } finally { setSavingMarks(false) }
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Results</h1>
-        <p className="text-sm text-gray-500">
-          {isStudent ? 'Your academic results' : isParent ? 'Your child\'s academic progress' : 'View and analyse student academic results'}
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Results</h1>
+          <p className="text-sm text-gray-500">
+            {isStudent ? 'Your academic results'
+              : isParent ? "Your child's academic progress"
+              : 'View and analyse student academic results'}
+          </p>
+        </div>
+        {isAdminOrTeacher && (
+          <button
+            onClick={() => setShowMarksModal(true)}
+            className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            ✏️ Enter Marks
+          </button>
+        )}
       </div>
 
-      {/* Student overall card (student) */}
+      {/* Student overall card */}
       {isStudent && studentOverall && (
-        <div className="bg-white border rounded-xl px-4 py-3 grid grid-cols-2 gap-3">
-          <div>
-            <span className="text-xs text-gray-500">Total Score</span>
-            <div className="text-2xl font-bold">{studentOverall.totalScore}</div>
-          </div>
-          <div>
-            <span className="text-xs text-gray-500">Percentage</span>
-            <div className="text-2xl font-bold">{studentOverall.percentage}%</div>
-          </div>
-          <div>
-            <span className="text-xs text-gray-500">Grade</span>
-            <div className="text-xl font-bold"><GradeBadge grade={studentOverall.grade} /></div>
-          </div>
-          <div>
-            <span className="text-xs text-gray-500">Remark</span>
-            <div className="text-lg font-medium text-gray-700">{studentOverall.remark}</div>
-          </div>
+        <div className="bg-white border rounded-xl px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Score', value: String(studentOverall.totalScore) },
+            { label: 'Percentage',  value: `${studentOverall.percentage}%` },
+            { label: 'Grade',       value: studentOverall.grade },
+            { label: 'Remark',      value: studentOverall.remark },
+          ].map(({ label, value }) => (
+            <div key={label}>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</div>
+              {label === 'Grade'
+                ? <GradeBadge grade={value} />
+                : <div className="text-xl font-bold text-gray-900">{value}</div>
+              }
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Parent overall card (computed) */}
+      {/* Parent overall card */}
       {isParent && computedOverall && (
-        <div className="bg-white border rounded-xl px-4 py-3 grid grid-cols-2 gap-3">
-          <div>
-            <span className="text-xs text-gray-500">Total Score</span>
-            <div className="text-2xl font-bold">{computedOverall.totalScore}</div>
-          </div>
-          <div>
-            <span className="text-xs text-gray-500">Percentage</span>
-            <div className="text-2xl font-bold">{computedOverall.percentage}%</div>
-          </div>
-          <div>
-            <span className="text-xs text-gray-500">Grade</span>
-            <div className="text-xl font-bold"><GradeBadge grade={computedOverall.grade} /></div>
-          </div>
-          <div>
-            <span className="text-xs text-gray-500">Remark</span>
-            <div className="text-lg font-medium text-gray-700">{computedOverall.remark}</div>
-          </div>
+        <div className="bg-white border rounded-xl px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Score', value: String(computedOverall.totalScore) },
+            { label: 'Percentage',  value: `${computedOverall.percentage}%` },
+            { label: 'Grade',       value: computedOverall.grade },
+            { label: 'Remark',      value: computedOverall.remark },
+          ].map(({ label, value }) => (
+            <div key={label}>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</div>
+              {label === 'Grade'
+                ? <GradeBadge grade={value} />
+                : <div className="text-xl font-bold text-gray-900">{value}</div>
+              }
+            </div>
+          ))}
         </div>
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 items-center">
         <select
           className="border rounded-lg px-3 py-2 text-sm bg-white"
           value={selectedTerm}
@@ -311,8 +430,8 @@ export default function ResultsPage() {
           ))}
         </select>
 
-        {/* Child selector for parent */}
-        {isParent && children.length > 0 && (
+        {/* Parent child selector (hidden if direct link) */}
+        {isParent && children.length > 0 && !urlStudentId && (
           <select
             className="border rounded-lg px-3 py-2 text-sm bg-white"
             value={selectedStudent}
@@ -326,18 +445,38 @@ export default function ResultsPage() {
           </select>
         )}
 
-        {/* Student selector for admin/teacher */}
-        {!isStudent && !isParent && (
+        {/* Admin/teacher student filter */}
+        {isAdminOrTeacher && (
           <select
             className="border rounded-lg px-3 py-2 text-sm bg-white"
             value={selectedStudent}
             onChange={e => setSelectedStudent(e.target.value)}
           >
             <option value="all">All Students</option>
-            {students.map(s => (
+            {resultStudents.map(s => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
+        )}
+
+        {/* Download PDF for selected term */}
+        {selectedStudent && selectedStudent !== 'all' && selectedTerm && (
+          <button
+            onClick={() => downloadPDF(selectedStudent, selectedTerm)}
+            className="px-3 py-2 border border-violet-300 text-violet-600 hover:bg-violet-50 text-sm font-medium rounded-lg transition-colors"
+          >
+            📄 Download PDF
+          </button>
+        )}
+
+        {/* Download latest term PDF */}
+        {selectedStudent && selectedStudent !== 'all' && (
+          <button
+            onClick={() => downloadLatestPDF(selectedStudent)}
+            className="px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium rounded-lg transition-colors"
+          >
+            📥 Latest Term PDF
+          </button>
         )}
       </div>
 
@@ -348,7 +487,7 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* Summary cards */}
+      {/* Summary stats */}
       {!loading && filtered.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           {[
@@ -367,15 +506,12 @@ export default function ResultsPage() {
       {/* Tabs */}
       {showReportTab && (
         <div className="flex gap-1 border-b">
-          {(['results', 'report'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+          {(['results', 'report'] as const).map(t => (
+            <button key={t} onClick={() => setActiveTab(t)}
               className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors ${
-                activeTab === tab ? 'border-violet-600 text-violet-600' : 'border-transparent text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              {tab === 'report' ? 'Report Card' : 'Marks'}
+                activeTab === t ? 'border-violet-600 text-violet-600' : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}>
+              {t === 'report' ? 'Report Card' : 'Marks'}
             </button>
           ))}
         </div>
@@ -391,7 +527,7 @@ export default function ResultsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wide">
                 <tr>
-                  {!isStudent && !isParent && selectedStudent === 'all' && (
+                  {isAdminOrTeacher && selectedStudent === 'all' && (
                     <th className="px-4 py-3">Student</th>
                   )}
                   <th className="px-4 py-3">Subject</th>
@@ -414,23 +550,23 @@ export default function ResultsPage() {
                 ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-10 text-center text-gray-400">
-                      No results found for this selection
+                      No results found for this term
                     </td>
                   </tr>
                 ) : (
                   filtered.map(r => (
                     <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                      {!isStudent && !isParent && selectedStudent === 'all' && (
+                      {isAdminOrTeacher && selectedStudent === 'all' && (
                         <td className="px-4 py-3 font-medium text-gray-900">
-                          {r.student_name ?? r.subjects?.code}
+                          {r.student_name ?? r.students?.users?.full_name}
                         </td>
                       )}
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">{r.subjects?.name ?? r.subject_name}</div>
                         <div className="text-xs text-gray-400">{r.subjects?.code}</div>
                       </td>
-                      <td className="px-4 py-3 w-28"><ScoreBar value={r.test_score} max={40} /></td>
-                      <td className="px-4 py-3 w-28"><ScoreBar value={r.exam_score} max={60} /></td>
+                      <td className="px-4 py-3 w-28"><ScoreBar value={r.test_score}  max={40}  /></td>
+                      <td className="px-4 py-3 w-28"><ScoreBar value={r.exam_score}  max={60}  /></td>
                       <td className="px-4 py-3 w-28"><ScoreBar value={r.total_score} max={100} /></td>
                       <td className="px-4 py-3"><GradeBadge grade={r.grade} /></td>
                       <td className="px-4 py-3 text-gray-600">{r.remark}</td>
@@ -451,13 +587,132 @@ export default function ResultsPage() {
               Generating report card…
             </div>
           ) : reportHtml ? (
-            <iframe
-              srcDoc={reportHtml}
-              className="w-full"
-              style={{ height: '80vh', border: 'none' }}
-              title="Report Card"
-            />
+            <>
+              {(isParent || isAdminOrTeacher) && reportStudentId && selectedTerm && (
+                <div className="px-4 py-3 border-b flex justify-end">
+                  <button
+                    onClick={() => downloadPDF(reportStudentId, selectedTerm)}
+                    className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    📥 Download PDF
+                  </button>
+                </div>
+              )}
+              <iframe
+                srcDoc={reportHtml}
+                className="w-full"
+                style={{ height: '80vh', border: 'none' }}
+                title="Report Card"
+              />
+            </>
           ) : null}
+        </div>
+      )}
+
+      {/* Enter Marks Modal */}
+      {showMarksModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800">Enter Marks</h3>
+              <button onClick={() => setShowMarksModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Student *</label>
+                <select className={inputClass} value={marksForm.student_id}
+                  onChange={e => setMarksForm(f => ({ ...f, student_id: e.target.value }))}>
+                  <option value="">— Select Student —</option>
+                  {allStudents.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
+                <select className={inputClass} value={marksForm.subject_id}
+                  onChange={e => setMarksForm(f => ({ ...f, subject_id: e.target.value }))}>
+                  <option value="">— Select Subject —</option>
+                  {subjects.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Term *</label>
+                <select className={inputClass} value={marksForm.term_id}
+                  onChange={e => setMarksForm(f => ({ ...f, term_id: e.target.value }))}>
+                  <option value="">— Select Term —</option>
+                  {terms.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
+                <select className={inputClass} value={marksForm.class_id}
+                  onChange={e => setMarksForm(f => ({ ...f, class_id: e.target.value }))}>
+                  <option value="">— Select Class —</option>
+                  {classes.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} {c.section}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Test (0–40) *</label>
+                  <input
+                    type="number" min={0} max={40} placeholder="0–40"
+                    className={`${inputClass} ${
+                      marksForm.test_score !== '' &&
+                      (Number(marksForm.test_score) < 0 || Number(marksForm.test_score) > 40)
+                        ? 'border-red-400 bg-red-50' : ''
+                    }`}
+                    value={marksForm.test_score}
+                    onChange={e => {
+                      const v = e.target.value
+                      if (v === '' || (Number(v) >= 0 && Number(v) <= 40))
+                        setMarksForm(f => ({ ...f, test_score: v }))
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Exam (0–60) *</label>
+                  <input
+                    type="number" min={0} max={60} placeholder="0–60"
+                    className={`${inputClass} ${
+                      marksForm.exam_score !== '' &&
+                      (Number(marksForm.exam_score) < 0 || Number(marksForm.exam_score) > 60)
+                        ? 'border-red-400 bg-red-50' : ''
+                    }`}
+                    value={marksForm.exam_score}
+                    onChange={e => {
+                      const v = e.target.value
+                      if (v === '' || (Number(v) >= 0 && Number(v) <= 60))
+                        setMarksForm(f => ({ ...f, exam_score: v }))
+                    }}
+                  />
+                </div>
+              </div>
+              {marksForm.test_score && marksForm.exam_score && (
+                <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-sm flex justify-between">
+                  <span className="text-gray-600">Total:</span>
+                  <span className="font-bold text-violet-700">
+                    {Number(marksForm.test_score) + Number(marksForm.exam_score)} / 100
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={saveMarks} disabled={savingMarks}
+              className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-lg disabled:opacity-60 transition-colors"
+            >
+              {savingMarks ? 'Saving…' : 'Save Marks'}
+            </button>
+          </div>
         </div>
       )}
     </div>
