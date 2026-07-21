@@ -120,6 +120,12 @@ export default function ResultsPage() {
   const [reportLoading, setReportLoading] = useState(false)
   const [studentOverall, setStudentOverall] = useState<StudentOverall | null>(null)
 
+  // Class filter for results table
+  const [selectedClass,         setSelectedClass]         = useState('')
+  // Filtered subjects inside the marks modal (filtered by class_id)
+  const [modalSubjects,         setModalSubjects]         = useState<Subject[]>([])
+  const [loadingModalSubjects,  setLoadingModalSubjects]  = useState(false)
+
   const [showMarksModal, setShowMarksModal] = useState(false)
   const [savingMarks,    setSavingMarks]    = useState(false)
   const [marksForm, setMarksForm] = useState({
@@ -213,7 +219,9 @@ export default function ResultsPage() {
         .catch(() => setError('Failed to load your results'))
         .finally(() => setLoading(false))
     } else if (isAdminOrTeacher) {
-      api.get('/api/results', { params: { term_id: selectedTerm } })
+      const params: any = { term_id: selectedTerm }
+      if (selectedClass) params.class_id = selectedClass
+      api.get('/api/results', { params })
         .then(res => {
           const all: Result[] = res.data?.value ?? res.data ?? []
           setResults(all)
@@ -230,7 +238,7 @@ export default function ResultsPage() {
       // parent — handled by separate effect below
       setLoading(false)
     }
-  }, [selectedTerm, isStudent, isParent, isAdminOrTeacher])
+  }, [selectedTerm, selectedClass, isStudent, isParent, isAdminOrTeacher])
 
   // ── Reload when parent switches child ──────────────────────────────────────
   useEffect(() => {
@@ -326,6 +334,29 @@ export default function ResultsPage() {
       toast.error('Failed to download PDF')
     }
   }
+
+  // ── Fetch subjects filtered by class (for marks modal) ───────────────────
+  useEffect(() => {
+    if (!marksForm.class_id) {
+      setModalSubjects(subjects)
+      return
+    }
+    setLoadingModalSubjects(true)
+    setMarksForm(f => ({ ...f, subject_id: '' }))
+    api.get(`/api/classes/${marksForm.class_id}/subjects`)
+      .then(res => {
+        const list: Subject[] = res.data?.value ?? res.data ?? []
+        if (Array.isArray(list) && list.length > 0) {
+          setModalSubjects(list)
+          if (list[0]) setMarksForm(f => ({ ...f, subject_id: list[0].id }))
+        } else {
+          setModalSubjects(subjects)
+          if (subjects[0]) setMarksForm(f => ({ ...f, subject_id: subjects[0].id }))
+        }
+      })
+      .catch(() => setModalSubjects(subjects))
+      .finally(() => setLoadingModalSubjects(false))
+  }, [marksForm.class_id, subjects])
 
     // ── Save marks ─────────────────────────────────────────────────────────────
   async function saveMarks() {
@@ -470,6 +501,20 @@ export default function ResultsPage() {
             <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>
           ))}
         </select>
+
+        {/* Class filter — admin/teacher only */}
+        {isAdminOrTeacher && (
+          <select
+            className="border rounded-lg px-3 py-2 text-sm bg-white"
+            value={selectedClass}
+            onChange={e => { setSelectedClass(e.target.value); setSelectedStudent('all') }}
+          >
+            <option value="">All Classes</option>
+            {classes.map(c => (
+              <option key={c.id} value={c.id}>{c.name} {c.section}</option>
+            ))}
+          </select>
+        )}
 
         {/* Parent child selector (hidden if direct link) */}
         {isParent && children.length > 0 && !urlStudentId && (
@@ -765,12 +810,21 @@ export default function ResultsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
-                <select className={inputClass} value={marksForm.subject_id}
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject *
+                  {loadingModalSubjects && <span className="ml-1 text-xs text-violet-400 font-normal">(loading…)</span>}
+                  {!loadingModalSubjects && marksForm.class_id && modalSubjects.length < subjects.length && modalSubjects.length > 0 && (
+                    <span className="ml-1 text-xs text-violet-500 font-normal">({modalSubjects.length} for this class)</span>
+                  )}
+                </label>
+                <select
+                  className={`${inputClass} disabled:bg-gray-50`}
+                  value={marksForm.subject_id}
+                  disabled={loadingModalSubjects}
                   onChange={e => setMarksForm(f => ({ ...f, subject_id: e.target.value }))}>
                   <option value="">— Select Subject —</option>
-                  {subjects.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                  {modalSubjects.map(s => (
+                    <option key={s.id} value={s.id}>{s.code} — {s.name}</option>
                   ))}
                 </select>
               </div>
@@ -788,7 +842,7 @@ export default function ResultsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
                 <select className={inputClass} value={marksForm.class_id}
                   onChange={e => setMarksForm(f => ({ ...f, class_id: e.target.value }))}>
-                  <option value="">— Select Class —</option>
+                  <option value="">— Select Class (filters subjects) —</option>
                   {classes.map(c => (
                     <option key={c.id} value={c.id}>{c.name} {c.section}</option>
                   ))}
