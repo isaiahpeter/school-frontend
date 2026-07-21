@@ -127,6 +127,14 @@ export default function ResultsPage() {
     test_score: '', exam_score: '',
   })
 
+  // Attendance summary modal
+  const [showAttModal,   setShowAttModal]   = useState(false)
+  const [savingAtt,      setSavingAtt]      = useState(false)
+  const [attForm, setAttForm] = useState({
+    student_id: '', term_id: '', class_id: '',
+    present_count: '', total_school_days: '',
+  })
+
   // ── Load initial data ──────────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
@@ -355,6 +363,31 @@ export default function ResultsPage() {
     } finally { setSavingMarks(false) }
   }
 
+  // ── Save attendance summary ───────────────────────────────────────────────
+  async function saveAttendanceSummary() {
+    const { student_id, term_id, class_id, present_count, total_school_days } = attForm
+    if (!student_id || !term_id || !class_id || !present_count || !total_school_days)
+      return toast.error('All fields are required')
+    const p = Number(present_count)
+    const t = Number(total_school_days)
+    if (isNaN(p) || p < 0) return toast.error('Present count must be 0 or more')
+    if (isNaN(t) || t <= 0) return toast.error('Total school days must be greater than 0')
+    if (p > t) return toast.error('Present count cannot exceed total school days')
+    setSavingAtt(true)
+    try {
+      await api.post('/api/attendance/summary', {
+        student_id, term_id, class_id,
+        present_count: p,
+        total_school_days: t,
+      })
+      toast.success('Attendance summary saved — report card will reflect this')
+      setShowAttModal(false)
+      setAttForm({ student_id: '', term_id: '', class_id: '', present_count: '', total_school_days: '' })
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed to save attendance')
+    } finally { setSavingAtt(false) }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
@@ -369,12 +402,20 @@ export default function ResultsPage() {
           </p>
         </div>
         {isAdminOrTeacher && (
-          <button
-            onClick={() => setShowMarksModal(true)}
-            className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            ✏️ Enter Marks
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setShowMarksModal(true)}
+              className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              ✏️ Enter Marks
+            </button>
+            <button
+              onClick={() => setShowAttModal(true)}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              📊 Term Attendance
+            </button>
+          </div>
         )}
       </div>
 
@@ -606,6 +647,99 @@ export default function ResultsPage() {
               />
             </>
           ) : null}
+        </div>
+      )}
+
+      {/* ── Term Attendance Summary Modal ── */}
+      {showAttModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800">Term Attendance Summary</h3>
+              <button onClick={() => setShowAttModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Enter the student's attendance for the full term. This will appear on their report card.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Student *</label>
+                <select className={inputClass} value={attForm.student_id}
+                  onChange={e => setAttForm(f => ({ ...f, student_id: e.target.value }))}>
+                  <option value="">— Select Student —</option>
+                  {allStudents.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Term *</label>
+                <select className={inputClass} value={attForm.term_id}
+                  onChange={e => setAttForm(f => ({ ...f, term_id: e.target.value }))}>
+                  <option value="">— Select Term —</option>
+                  {terms.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
+                <select className={inputClass} value={attForm.class_id}
+                  onChange={e => setAttForm(f => ({ ...f, class_id: e.target.value }))}>
+                  <option value="">— Select Class —</option>
+                  {classes.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} {c.section}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Days Present *</label>
+                  <input
+                    type="number" min={0} placeholder="e.g. 58"
+                    className={`${inputClass} ${
+                      attForm.present_count && attForm.total_school_days &&
+                      Number(attForm.present_count) > Number(attForm.total_school_days)
+                        ? 'border-red-400 bg-red-50' : ''
+                    }`}
+                    value={attForm.present_count}
+                    onChange={e => setAttForm(f => ({ ...f, present_count: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Total School Days *</label>
+                  <input
+                    type="number" min={1} placeholder="e.g. 65"
+                    className={inputClass}
+                    value={attForm.total_school_days}
+                    onChange={e => setAttForm(f => ({ ...f, total_school_days: e.target.value }))}
+                  />
+                </div>
+              </div>
+              {/* Live preview */}
+              {attForm.present_count && attForm.total_school_days &&
+               Number(attForm.total_school_days) > 0 &&
+               Number(attForm.present_count) <= Number(attForm.total_school_days) && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-sm">
+                  <div className="flex justify-between text-emerald-800">
+                    <span>Present: <strong>{attForm.present_count}</strong></span>
+                    <span>Absent: <strong>{Number(attForm.total_school_days) - Number(attForm.present_count)}</strong></span>
+                    <span>Total: <strong>{attForm.total_school_days}</strong></span>
+                  </div>
+                  <div className="mt-1 text-xs text-emerald-600 text-center">
+                    {Math.round((Number(attForm.present_count) / Number(attForm.total_school_days)) * 100)}% attendance
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={saveAttendanceSummary} disabled={savingAtt}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg disabled:opacity-60 transition-colors"
+            >
+              {savingAtt ? 'Saving…' : 'Save Attendance Summary'}
+            </button>
+          </div>
         </div>
       )}
 
