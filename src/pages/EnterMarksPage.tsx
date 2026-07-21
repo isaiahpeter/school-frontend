@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 
-interface Class { id: string; name: string; section: string }
-interface Term { id: string; name: string; academic_year: string }
+interface Class   { id: string; name: string; section: string }
+interface Term    { id: string; name: string; academic_year: string }
 interface Subject { id: string; name: string; code: string }
 interface Enrollment {
   student_id: string
@@ -18,37 +18,67 @@ interface MarkEntry {
 }
 
 export default function EnterMarksPage() {
-  const [classes,  setClasses]  = useState<Class[]>([])
-  const [terms,    setTerms]    = useState<Term[]>([])
-  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [classes,          setClasses]          = useState<Class[]>([])
+  const [terms,            setTerms]            = useState<Term[]>([])
+  const [allSubjects,      setAllSubjects]       = useState<Subject[]>([])
+  const [filteredSubjects, setFilteredSubjects]  = useState<Subject[]>([])
+  const [loadingSubjects,  setLoadingSubjects]   = useState(false)
 
   const [selectedClass,   setSelectedClass]   = useState('')
   const [selectedTerm,    setSelectedTerm]    = useState('')
   const [selectedSubject, setSelectedSubject] = useState('')
 
-  const [marks, setMarks] = useState<MarkEntry[]>([])
+  const [marks,   setMarks]   = useState<MarkEntry[]>([])
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [saving,  setSaving]  = useState(false)
 
+  // ── Initial data load ──────────────────────────────────────────────────────
   useEffect(() => {
     Promise.all([
       api.get('/api/classes'),
       api.get('/api/terms'),
       api.get('/api/subjects'),
     ]).then(([cl, te, su]) => {
-      const classList    = cl.data?.value ?? cl.data ?? []
-      const termList     = te.data?.value ?? te.data ?? []
-      const subjectList  = su.data?.value ?? su.data ?? []
+      const classList   = cl.data?.value ?? cl.data ?? []
+      const termList    = te.data?.value ?? te.data ?? []
+      const subjectList = su.data?.value ?? su.data ?? []
       setClasses(classList)
       setTerms(termList)
-      setSubjects(subjectList)
-      if (classList[0])   setSelectedClass(classList[0].id)
-      if (termList[0])    setSelectedTerm(termList[0].id)
-      if (subjectList[0]) setSelectedSubject(subjectList[0].id)
+      setAllSubjects(subjectList)
+      setFilteredSubjects(subjectList) // default until a class is chosen
+      if (termList[0])  setSelectedTerm(termList[0].id)
+      if (classList[0]) setSelectedClass(classList[0].id)
     }).catch(() => toast.error('Failed to load data'))
   }, [])
 
-  // Load students when class changes
+  // ── Filter subjects by class using /api/classes/:classId/subjects ──────────
+  useEffect(() => {
+    if (!selectedClass) return
+    setLoadingSubjects(true)
+    setSelectedSubject('') // reset subject when class changes
+
+    api.get(`/api/classes/${selectedClass}/subjects`)
+      .then(res => {
+        const list: Subject[] = res.data?.value ?? res.data ?? []
+        if (Array.isArray(list) && list.length > 0) {
+          setFilteredSubjects(list)
+          // Auto-select first subject
+          if (list[0]) setSelectedSubject(list[0].id)
+        } else {
+          // No subjects assigned to class — fall back to all
+          setFilteredSubjects(allSubjects)
+          if (allSubjects[0]) setSelectedSubject(allSubjects[0].id)
+        }
+      })
+      .catch(() => {
+        // Endpoint failed — fall back to all subjects
+        setFilteredSubjects(allSubjects)
+        if (allSubjects[0]) setSelectedSubject(allSubjects[0].id)
+      })
+      .finally(() => setLoadingSubjects(false))
+  }, [selectedClass, allSubjects])
+
+  // ── Load students when class changes ──────────────────────────────────────
   useEffect(() => {
     if (!selectedClass) return
     setLoading(true)
@@ -56,33 +86,34 @@ export default function EnterMarksPage() {
       .then(res => {
         const list: Enrollment[] = res.data?.value ?? res.data ?? []
         setMarks(list.map(e => ({
-          student_id: e.student_id,
+          student_id:   e.student_id,
           student_name: e.students?.users?.full_name ?? '—',
-          test_score: '',
-          exam_score: '',
+          test_score:   '',
+          exam_score:   '',
         })))
       })
       .catch(() => toast.error('Failed to load students'))
       .finally(() => setLoading(false))
   }, [selectedClass])
 
-function updateMark(studentId: string, field: 'test_score' | 'exam_score', value: string) {
-  // Allow empty string (user clearing the field)
-  if (value === '' || value === '-') {
-    setMarks(prev => prev.map(m => m.student_id === studentId ? { ...m, [field]: '' } : m))
-    return
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function updateMark(studentId: string, field: 'test_score' | 'exam_score', value: string) {
+    if (value === '' || value === '-') {
+      setMarks(prev => prev.map(m => m.student_id === studentId ? { ...m, [field]: '' } : m))
+      return
+    }
+    const num = Number(value)
+    const max = field === 'test_score' ? 40 : 60
+    if (num < 0 || num > max) return
+    setMarks(prev => prev.map(m => m.student_id === studentId ? { ...m, [field]: value } : m))
   }
-  const num = Number(value)
-  const max = field === 'test_score' ? 40 : 60
-  // Clamp to valid range
-  if (num < 0 || num > max) return
-  setMarks(prev => prev.map(m => m.student_id === studentId ? { ...m, [field]: value } : m))
-}
 
   function total(m: MarkEntry) {
-    const t = Number(m.test_score) || 0
-    const e = Number(m.exam_score) || 0
-    return t + e
+    return (Number(m.test_score) || 0) + (Number(m.exam_score) || 0)
+  }
+
+  function fillAll(field: 'test_score' | 'exam_score', value: string) {
+    setMarks(prev => prev.map(m => ({ ...m, [field]: value })))
   }
 
   async function saveMarks() {
@@ -91,7 +122,6 @@ function updateMark(studentId: string, field: 'test_score' | 'exam_score', value
     if (!selectedClass || !selectedTerm || !selectedSubject)
       return toast.error('Select class, term and subject')
 
-    // Validate ranges
     for (const m of filled) {
       const t = Number(m.test_score)
       const e = Number(m.exam_score)
@@ -103,15 +133,15 @@ function updateMark(studentId: string, field: 'test_score' | 'exam_score', value
     try {
       await api.post('/api/results/bulk', {
         marks: filled.map(m => ({
-          student_id:  m.student_id,
-          subject_id:  selectedSubject,
-          term_id:     selectedTerm,
-          class_id:    selectedClass,
-          test_score:  Number(m.test_score) || 0,
-          exam_score:  Number(m.exam_score) || 0,
+          student_id: m.student_id,
+          subject_id: selectedSubject,
+          term_id:    selectedTerm,
+          class_id:   selectedClass,
+          test_score: Number(m.test_score) || 0,
+          exam_score: Number(m.exam_score) || 0,
         }))
       })
-      toast.success(`Marks saved for ${filled.length} students`)
+      toast.success(`Marks saved for ${filled.length} student${filled.length !== 1 ? 's' : ''}`)
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Failed to save marks')
     } finally {
@@ -119,11 +149,10 @@ function updateMark(studentId: string, field: 'test_score' | 'exam_score', value
     }
   }
 
-  function fillAll(field: 'test_score' | 'exam_score', value: string) {
-    setMarks(prev => prev.map(m => ({ ...m, [field]: value })))
-  }
-
-  const selectedSubjectName = subjects.find(s => s.id === selectedSubject)?.name ?? ''
+  const selectedSubjectObj  = filteredSubjects.find(s => s.id === selectedSubject)
+  const selectedSubjectName = selectedSubjectObj
+    ? `${selectedSubjectObj.name} (${selectedSubjectObj.code})`
+    : ''
 
   return (
     <div className="space-y-5">
@@ -134,25 +163,66 @@ function updateMark(studentId: string, field: 'test_score' | 'exam_score', value
 
       {/* Selectors */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Class */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Class</label>
-          <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-            value={selectedClass} onChange={e => setSelectedClass(e.target.value)}>
-            {classes.map(c => <option key={c.id} value={c.id}>{c.name} {c.section}</option>)}
+          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
+            Class
+          </label>
+          <select
+            className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+            value={selectedClass}
+            onChange={e => setSelectedClass(e.target.value)}
+          >
+            {classes.map(c => (
+              <option key={c.id} value={c.id}>{c.name} {c.section}</option>
+            ))}
           </select>
         </div>
+
+        {/* Term */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Term</label>
-          <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-            value={selectedTerm} onChange={e => setSelectedTerm(e.target.value)}>
-            {terms.map(t => <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>)}
+          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
+            Term
+          </label>
+          <select
+            className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+            value={selectedTerm}
+            onChange={e => setSelectedTerm(e.target.value)}
+          >
+            {terms.map(t => (
+              <option key={t.id} value={t.id}>{t.name} — {t.academic_year}</option>
+            ))}
           </select>
         </div>
+
+        {/* Subject — filtered by class */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Subject</label>
-          <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-            value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)}>
-            {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
+            Subject
+            {loadingSubjects && (
+              <span className="ml-1 text-violet-400 normal-case font-normal">(loading…)</span>
+            )}
+            {!loadingSubjects && filteredSubjects.length < allSubjects.length && filteredSubjects.length > 0 && (
+              <span className="ml-1 text-violet-500 normal-case font-normal">
+                ({filteredSubjects.length} assigned)
+              </span>
+            )}
+          </label>
+          <select
+            className="w-full border rounded-lg px-3 py-2 text-sm bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+            value={selectedSubject}
+            onChange={e => setSelectedSubject(e.target.value)}
+            disabled={loadingSubjects}
+          >
+            {filteredSubjects.length === 0 ? (
+              <option value="">— No subjects assigned —</option>
+            ) : (
+              filteredSubjects.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.code} — {s.name}
+                </option>
+              ))
+            )}
           </select>
         </div>
       </div>
@@ -161,20 +231,29 @@ function updateMark(studentId: string, field: 'test_score' | 'exam_score', value
       <div className="bg-white border rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b flex items-center justify-between">
           <div className="text-sm font-medium text-gray-700">
-            {selectedSubjectName} — {marks.length} students
+            {selectedSubjectName
+              ? <><span className="text-violet-700">{selectedSubjectName}</span> — {marks.length} students</>
+              : `${marks.length} students`}
           </div>
-          {/* Quick fill */}
           <div className="flex gap-2 text-xs">
-            <button onClick={() => fillAll('test_score', '40')}
-              className="text-violet-600 hover:underline">Fill test max</button>
-            <button onClick={() => setMarks(m => m.map(e => ({ ...e, test_score: '', exam_score: '' })))}
-              className="text-gray-400 hover:underline">Clear all</button>
+            <button
+              onClick={() => fillAll('test_score', '40')}
+              className="text-violet-600 hover:underline"
+            >
+              Fill test max
+            </button>
+            <button
+              onClick={() => setMarks(m => m.map(e => ({ ...e, test_score: '', exam_score: '' })))}
+              className="text-gray-400 hover:underline"
+            >
+              Clear all
+            </button>
           </div>
         </div>
 
         {loading ? (
           <div className="p-4 space-y-3 animate-pulse">
-            {[1,2,3].map(i => <div key={i} className="h-12 bg-gray-100 rounded" />)}
+            {[1, 2, 3].map(i => <div key={i} className="h-12 bg-gray-100 rounded" />)}
           </div>
         ) : marks.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-gray-400">
@@ -193,7 +272,7 @@ function updateMark(studentId: string, field: 'test_score' | 'exam_score', value
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {marks.map((m, idx) => {
-                  const t = total(m)
+                  const t         = total(m)
                   const hasValues = m.test_score !== '' || m.exam_score !== ''
                   return (
                     <tr key={m.student_id} className="hover:bg-gray-50">
@@ -205,37 +284,35 @@ function updateMark(studentId: string, field: 'test_score' | 'exam_score', value
                           <span className="font-medium text-gray-900">{m.student_name}</span>
                         </div>
                       </td>
-                    <td className="px-4 py-2">
-  <input
-    type="number" min={0} max={40}
-    className={`w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 ${
-      m.test_score !== '' && (Number(m.test_score) < 0 || Number(m.test_score) > 40)
-        ? 'border-red-400 bg-red-50'
-        : ''
-    }`}
-    placeholder="0–40"
-    value={m.test_score}
-    onChange={e => updateMark(m.student_id, 'test_score', e.target.value)}
-  />
-</td>
-<td className="px-4 py-2">
-  <input
-    type="number" min={0} max={60}
-    className={`w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 ${
-      m.exam_score !== '' && (Number(m.exam_score) < 0 || Number(m.exam_score) > 60)
-        ? 'border-red-400 bg-red-50'
-        : ''
-    }`}
-    placeholder="0–60"
-    value={m.exam_score}
-    onChange={e => updateMark(m.student_id, 'exam_score', e.target.value)}
-  />
-</td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="number" min={0} max={40}
+                          className={`w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 ${
+                            m.test_score !== '' && (Number(m.test_score) < 0 || Number(m.test_score) > 40)
+                              ? 'border-red-400 bg-red-50' : ''
+                          }`}
+                          placeholder="0–40"
+                          value={m.test_score}
+                          onChange={e => updateMark(m.student_id, 'test_score', e.target.value)}
+                        />
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="number" min={0} max={60}
+                          className={`w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 ${
+                            m.exam_score !== '' && (Number(m.exam_score) < 0 || Number(m.exam_score) > 60)
+                              ? 'border-red-400 bg-red-50' : ''
+                          }`}
+                          placeholder="0–60"
+                          value={m.exam_score}
+                          onChange={e => updateMark(m.student_id, 'exam_score', e.target.value)}
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         {hasValues ? (
                           <span className={`font-bold text-sm ${
                             t >= 70 ? 'text-green-600' :
-                            t >= 50 ? 'text-blue-600' :
+                            t >= 50 ? 'text-blue-600'  :
                             t >= 40 ? 'text-yellow-600' : 'text-red-600'
                           }`}>
                             {t}/100
@@ -256,10 +333,10 @@ function updateMark(studentId: string, field: 'test_score' | 'exam_score', value
       {marks.length > 0 && (
         <button
           onClick={saveMarks}
-          disabled={saving}
+          disabled={saving || !selectedSubject}
           className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-xl disabled:opacity-60 transition-colors"
         >
-          {saving ? 'Saving…' : 'Save Marks'}
+          {saving ? 'Saving…' : `Save Marks${selectedSubjectObj ? ` — ${selectedSubjectObj.code}` : ''}`}
         </button>
       )}
     </div>
