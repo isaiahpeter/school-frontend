@@ -130,6 +130,7 @@ export default function AdminPage() {
   const [newRole,        setNewRole]        = useState('student')
   const [userActionTab,  setUserActionTab]  = useState<'password'|'role'|'delete'>('password')
   const [linkParentForm, setLinkParentForm] = useState({ parent_user_id: '', student_id: '' })
+  const [userSearchTerm, setUserSearchTerm] = useState('')
 
   const [saving, setSaving] = useState(false)
 
@@ -410,6 +411,12 @@ export default function AdminPage() {
     { key: 'fees',        label: '💰 Set Fees' },
     { key: 'users',       label: '👤 Users' },
   ]
+
+  // ── Filtered users (for search) ──────────────────────────────────────────
+  const filteredUsers = users.filter(u =>
+    u.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+    u.email.toLowerCase().includes(userSearchTerm.toLowerCase())
+  )
 
   return (
     <div className="space-y-5">
@@ -966,10 +973,27 @@ export default function AdminPage() {
         <>
           <SectionHeader title="User Management" />
           <div className="bg-white border rounded-xl p-5 space-y-4 max-w-lg">
+            {/* Search box */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Search Users</label>
+              <input
+                type="text"
+                className={input}
+                placeholder="Type a name or email…"
+                value={userSearchTerm}
+                onChange={e => { setUserSearchTerm(e.target.value); setSelectedUserId('') }}
+              />
+              {userSearchTerm && (
+                <div className="text-xs text-gray-400 mt-1">
+                  {filteredUsers.length} result{filteredUsers.length !== 1 ? 's' : ''} found
+                </div>
+              )}
+            </div>
+
             <Field label="Select User *">
               <select className={input} value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
                 <option value="">— Choose a user —</option>
-                {users.map(u => (
+                {filteredUsers.map(u => (
                   <option key={u.id} value={u.id}>
                     {u.full_name} ({u.role}) – {u.email}
                   </option>
@@ -1037,7 +1061,7 @@ export default function AdminPage() {
                 <select className={input} value={linkParentForm.parent_user_id}
                   onChange={e => setLinkParentForm(f => ({ ...f, parent_user_id: e.target.value }))}>
                   <option value="">— Select Parent —</option>
-                  {users.filter(u => u.role === 'parent').map(u => (
+                  {filteredUsers.filter(u => u.role === 'parent').map(u => (
                     <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
                   ))}
                 </select>
@@ -1057,7 +1081,9 @@ export default function AdminPage() {
 
             {/* All users table */}
             <div className="pt-4 border-t">
-              <div className="font-medium text-sm text-gray-700 mb-3">All Users ({users.length})</div>
+              <div className="font-medium text-sm text-gray-700 mb-3">
+                All Users ({userSearchTerm ? `${filteredUsers.length} of ${users.length}` : users.length})
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide text-left">
@@ -1069,7 +1095,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {users.map(u => (
+                    {filteredUsers.map(u => (
                       <tr key={u.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2 font-medium">{u.full_name}</td>
                         <td className="px-3 py-2 text-gray-600">{u.email}</td>
